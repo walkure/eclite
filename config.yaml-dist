@@ -1,0 +1,7 @@
+bp35a1:
+    id      : B-ROUTE ID
+    pass    : B-ROUTE PASSWORD
+    device  : /dev/ttyWiSUN
+tcp:
+    host : localhost
+    port : 45451
