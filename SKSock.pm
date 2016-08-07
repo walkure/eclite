@@ -26,8 +26,12 @@ sub connect
 	}
 		
 	#initialize Protocl Stack
-	$self->_mode('SKTERM');
-	$self->_sendCmd('SKTERM');
+#	$self->_mode('SKTERM');
+#	$self->_sendCmd('SKTERM');
+
+
+	$self->_mode('SKINFO');
+	$self->_sendCmd('SKINFO');
 
 	$self;
 }
@@ -207,6 +211,9 @@ sub _ok
 
 	my $mode = $self->_mode();
 	if($mode eq 'SKTERM'){
+		$self->_sendCmd('SKRESET');
+		$self->_mode('SKRESET');
+	}elsif($mode eq 'SKINFO'){
 		$self->_sendCmd('SKRESET');
 		$self->_mode('SKRESET');
 	}elsif($mode eq 'SKRESET'){
