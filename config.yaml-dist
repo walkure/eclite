@@ -2,6 +2,7 @@ bp35a1:
     id      : B-ROUTE ID
     pass    : B-ROUTE PASSWORD
     device  : /dev/ttyWiSUN
-tcp:
+watt:
     host : localhost
     port : 45451
+period: period data output path
