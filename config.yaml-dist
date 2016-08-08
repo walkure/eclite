@@ -1,8 +1,11 @@
 bp35a1:
-    id      : B-ROUTE ID
-    pass    : B-ROUTE PASSWORD
+    id      : Route-B ID
+    pass    : Route-B Passwd
     device  : /dev/ttyWiSUN
 watt:
     host : localhost
-    port : 45451
-period: period data output path
+    port : 9898
+period:
+    shm: /dev/shm/kwh_period
+    server: http://hogehoge/recv.pl
+    pkey: pre-sharing-key-value
