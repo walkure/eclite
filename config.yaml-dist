@@ -1,11 +1,11 @@
 bp35a1:
     id      : Route-B ID
-    pass    : Route-B Passwd
+    pass    : Route-B Password
     device  : /dev/ttyWiSUN
 watt:
-    host : localhost
-    port : 9898
+#    tcp : "localhost:45451"
+    unix: /tmp/watt.sock
 period:
     shm: /dev/shm/kwh_period
-    server: http://hogehoge/recv.pl
-    pkey: pre-sharing-key-value
+    server: http://hoge/recv.pl
+    pkey: pre-share key

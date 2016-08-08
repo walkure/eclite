@@ -7,20 +7,36 @@ use strict;
 use warnings;
 use IO::Select;
 use IO::Socket::INET;
+use IO::Socket::UNIX;
 use SKSock;
 use YAML::Syck;
 use Time::Local qw(timelocal);
 
 my $conf = LoadFile('./config.yaml');
 
-my $isock = new IO::Socket::INET->new(
-	LocalAddr => $conf->{watt}{host},
-	LocalPort => $conf->{watt}{port},
-	Proto => 'tcp',
-	Listen => 1,
-	ReuseAddr => 1,
+my $isock;
 
-);
+if(defined $conf->{watt}{unix}){
+	print "use unix-sock[$conf->{watt}{unix}]\n";
+	$isock = new IO::Socket::UNIX->new(
+		Type => SOCK_STREAM(),
+		Local => $conf->{watt}{unix},
+		Listen => 1,
+	) or die "cannot establish unix-domain socket:$!\n";
+}elsif(defined $conf->{watt}{tcp}){
+	my($host,$port) = split(/:/,$conf->{watt}{tcp});
+	print "use tcp-sock[$host][$port]\n";
+	$isock = new IO::Socket::INET->new(
+		LocalAddr => $host,
+		LocalPort => $port,
+		Proto => 'tcp',
+		Listen => 1,
+		ReuseAddr => 1,
+	) or die "cannot establish tcp socket:$!\n";
+}else{
+	die "not found unix nor tcp\n"; 
+}
+
 my $sksock = SKSock->connect(%{$conf->{bp35a1}});
 $sksock->set_callback('erxudp',\&erxudp);
 $sksock->set_callback('connected',\&on_connected);
