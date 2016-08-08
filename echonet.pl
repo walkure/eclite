@@ -180,10 +180,10 @@ sub update_period
 	return if $kwh == 0;
 	return if $period == 0;
 
-	if(open(my $fh,'+< '.$conf->{period})){
+	if(open(my $fh,'+< '.$conf->{period}{shm})){
 		flock($fh,2);
 		seek($fh,0,0);
-		print $fh "$period:$kwh:".scalar localtime($period);
+		print $fh "$period:$kwh\n";
 		truncate($fh,tell($fh));
 		close $fh;
 	}
