@@ -36,18 +36,19 @@ $s->add($isock);
 
 print "start process...\n";
 
-my($mag,$kwh,$period,$watt,$ap) = (0,0,0,0,0);
+my($mag,$kwh,$period) = (0,0,0);
+my($watt,$ap) = (undef,undef);
 
-my $client = undef;
 while(1)
 {
 	foreach my $sock($s->can_read(undef))
 	{
 		if ($sock == $isock){
-			$client->close if defined $client;
-			$client = $sock->accept;
+			my $client = $sock->accept;
 			if(defined $client){
 				get_watt();
+				print $client "$watt\n" if defined $watt;
+				$client->close;
 			}	
 			next;
 		}
@@ -64,13 +65,8 @@ while(1)
 sub erxudp
 {
 	my ($src,$dst,$srcport,$dstport,$srcmac,$secure,$length,$data) = @_;
-	
 	parse($data);
-	if(defined $client){
-		print $client "$watt\n";
-		$client->close;
-		$client = undef;
-	}
+
 }
 
 sub on_connected
@@ -82,7 +78,7 @@ sub on_connected
 
 sub get_watt
 {
-	print "send query\n";
+	print scalar localtime.":send query\n";
 	$sksock->send_udp("\x10\x81\x00\x01\x05\xFF\x01\x02\x88\x01\x62\x02\xE7\x00\xE8\x00");
 
 }
