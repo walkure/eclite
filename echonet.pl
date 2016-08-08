@@ -23,6 +23,8 @@ if(defined $conf->{watt}{unix}){
 		Local => $conf->{watt}{unix},
 		Listen => 1,
 	) or die "cannot establish unix-domain socket:$!\n";
+	chmod 0777 ,  $conf->{watt}{unix};
+
 }elsif(defined $conf->{watt}{tcp}){
 	my($host,$port) = split(/:/,$conf->{watt}{tcp});
 	print "use tcp-sock[$host][$port]\n";
