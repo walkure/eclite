@@ -11,6 +11,9 @@ use IO::Socket::UNIX;
 use SKSock;
 use YAML::Syck;
 use Time::Local qw(timelocal);
+use Digest::MD5 qw(md5_hex);
+use HTTP::Lite;
+use URI::Escape;
 
 my $conf = LoadFile('./config.yaml');
 
@@ -202,12 +205,17 @@ sub update_period
 	return if $kwh == 0;
 	return if $period == 0;
 
-	if(open(my $fh,'+< '.$conf->{period}{shm})){
-		flock($fh,2);
-		seek($fh,0,0);
-		print $fh "$period:$kwh\n";
-		truncate($fh,tell($fh));
-		close $fh;
-	}
+	my $data = "$period:$kwh";
+
+	my $digest = md5_hex($data.$conf->{period}{pkey});
+	$data = uri_escape($data);
+
+	my $req =  $conf->{period}{server}."?data=$data&key=$digest";
+	print "req:$req\n";
+
+	my $http = new HTTP::Lite;
+	my $code = $http->request($req);
+	my $body = $http->body();
+	print "[$body]\n";
 }
 

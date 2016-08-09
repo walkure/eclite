@@ -6,6 +6,5 @@ watt:
 #    tcp : "localhost:45451"
     unix: /tmp/watt.sock
 period:
-    shm: /dev/shm/kwh_period
     server: http://hoge/recv.pl
     pkey: pre-share key
