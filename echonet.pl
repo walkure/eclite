@@ -18,6 +18,7 @@ my $isock;
 
 if(defined $conf->{watt}{unix}){
 	print "use unix-sock[$conf->{watt}{unix}]\n";
+	unlink $conf->{watt}{unix} if -e $conf->{watt}{unix};
 	$isock = new IO::Socket::UNIX->new(
 		Type => SOCK_STREAM(),
 		Local => $conf->{watt}{unix},
@@ -45,6 +46,9 @@ $sksock->set_callback('connected',\&on_connected);
 
 $SIG{INT} = sub{
 	print $sksock "SKTERM\r\n";
+	$isock->close;
+	$sksock->close;
+	unlink $conf->{watt}{unix} if(defined $conf->{watt}{unix} and -a $conf->{watt}{unix});
 	die;
 };
 
