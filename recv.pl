@@ -34,7 +34,7 @@ my $epoch = $values[0]+0;
 my $kwh = $values[1]+0;
 
 
-my $dbh = DBI->connect('DBI:mysql:kwh_period','kwh_agent','kwh_passwd');
+my $dbh = DBI->connect('DBI:mysql:kwh_period;mysql_server_prepare=1','kwh_agent','kwh_passwd');
 unless(defined $dbh){
 	print "Invalid\n";
 	exit;
