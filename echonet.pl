@@ -48,7 +48,7 @@ $SIG{INT} = sub{
 	print $sksock "SKTERM\r\n";
 	$isock->close;
 	$sksock->close;
-	unlink $conf->{watt}{unix} if(defined $conf->{watt}{unix} and -a $conf->{watt}{unix});
+	unlink $conf->{watt}{unix} if(defined $conf->{watt}{unix} and -e $conf->{watt}{unix});
 	die;
 };
 
