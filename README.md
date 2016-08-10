@@ -7,4 +7,5 @@
 	UserParameter=home.watt,nc -U /tmp/watt.sock
 	UserParameter=home.ebill,cut -f2 /dev/shm/e-bill
 	UserParameter=home.kwh,cut -f1 /dev/shm/e-bill
+	UserParameter=home.deltawh,cut -f3 /dev/shm/e-bill
 

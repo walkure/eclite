@@ -56,21 +56,23 @@ $sth->execute($from->epoch,$to->epoch);
 my $r1 = $sth->fetchrow_arrayref;
 $sth->finish;
 
-$sth = $dbh->prepare('SELECT kwh FROM meter_log WHERE period BETWEEN ? AND ? ORDER BY period DESC LIMIT 1');
+$sth = $dbh->prepare('SELECT kwh FROM meter_log WHERE period BETWEEN ? AND ? ORDER BY period DESC LIMIT 2');
 $sth->execute($from->epoch,$to->epoch);
-my $r2 = $sth->fetchrow_arrayref;
+my $r2 = $sth->fetchall_arrayref;
 $sth->finish;
 
 $dbh->disconnect;
 
 my $from_kwh = ($r1->[0] + 0)*1000;
-my $to_kwh   = ($r2->[0] + 0)*1000;
+my $to_kwh   = ($r2->[0][0] + 0)*1000;
+my $prev_kwh   = ($r2->[1][0] + 0)*1000;
 
 my $diff_kwh = ($to_kwh - $from_kwh) / 1000;
+my $delta_wh = ($to_kwh - $prev_kwh) ;
 my $yen = calculate($diff_kwh);
 
 open(my $fh,'>/dev/shm/e-bill') or die "cannot open bill:$!\n";
-print $fh "$diff_kwh\t$yen";
+print $fh "$diff_kwh\t$yen\t$delta_wh";
 close ($fh);
 
 print "OK\n";
