@@ -11,71 +11,95 @@ use CGI::Carp qw(fatalsToBrowser);
 use Time::Piece;
 
 my $conf = LoadFile('/home/walkure/eclite/config.yaml');
-my $q = new CGI;
+my $dbh;
 
-print "Content-Type:text/plain\n\n";
-my $data = $q->param('data');
-my $key  = $q->param('key');
+if(defined $ENV{REQUEST_METHOD}){
+	my $q = new CGI;
 
-unless(defined $data or defined $key){
-	print "Invalid\n";
-	exit;
+	print "Content-Type:text/plain\n\n";
+	my $data = $q->param('data');
+	my $key  = $q->param('key');
+
+	unless(defined $data or defined $key){
+		print "Invalid\n";
+		exit;
+	}
+
+	my $digest = md5_hex($data.$conf->{period}{pkey});
+
+	if($digest ne $key){
+		print "Invalid\n";
+		exit;
+	}
+
+	my @values = split(/:/,uri_unescape($data));
+	my $epoch = $values[0]+0;
+	my $kwh = $values[1]+0;
+
+	connect_db();
+	insert_data($epoch,$kwh);
+	update_bill();
+	print "OK";
+	
+}else{
+	connect_db();
+	update_bill();
 }
-
-my $digest = md5_hex($data.$conf->{period}{pkey});
-
-if($digest ne $key){
-	print "Invalid\n";
-	exit;
-}
-
-my @values = split(/:/,uri_unescape($data));
-my $epoch = $values[0]+0;
-my $kwh = $values[1]+0;
-
-
-my $dbh = DBI->connect('DBI:mysql:kwh_period;mysql_server_prepare=1','kwh_agent','kwh_passwd');
-unless(defined $dbh){
-	print "Invalid\n";
-	exit;
-}
-my $sth = $dbh->prepare('INSERT IGNORE INTO meter_log (period,kwh) VALUES (?,?)');
-$sth->bind_param(1,$epoch,DBI::SQL_INTEGER);
-$sth->bind_param(2,$kwh,DBI::SQL_DOUBLE);
-$sth->execute;
-$sth->finish;
-
-my $now = localtime;
-my $prev = Time::Piece->strptime($now->strftime('%Y-%m-15'), '%Y-%m-%d') - 86400 * 30;
-
-my $from = Time::Piece->strptime($prev->strftime('%Y-%m-26'), '%Y-%m-%d');
-my $to = Time::Piece->strptime($now->strftime('%Y-%m-26'), '%Y-%m-%d');
-
-$sth = $dbh->prepare('SELECT kwh FROM meter_log WHERE period BETWEEN ? AND ? ORDER BY period LIMIT 1');
-$sth->execute($from->epoch,$to->epoch);
-my $r1 = $sth->fetchrow_arrayref;
-$sth->finish;
-
-$sth = $dbh->prepare('SELECT kwh FROM meter_log WHERE period BETWEEN ? AND ? ORDER BY period DESC LIMIT 2');
-$sth->execute($from->epoch,$to->epoch);
-my $r2 = $sth->fetchall_arrayref;
-$sth->finish;
 
 $dbh->disconnect;
 
-my $from_kwh = ($r1->[0] + 0)*1000;
-my $to_kwh   = ($r2->[0][0] + 0)*1000;
-my $prev_kwh   = ($r2->[1][0] + 0)*1000;
+sub connect_db
+{
+	$dbh = DBI->connect('DBI:mysql:kwh_period;mysql_server_prepare=1','kwh_agent','kwh_passwd');
+	unless(defined $dbh){
+		print "Invalid\n";
+		exit;
+	}
+}
 
-my $diff_kwh = ($to_kwh - $from_kwh) / 1000;
-my $delta_wh = ($to_kwh - $prev_kwh) ;
-my $yen = calculate($diff_kwh);
+sub insert_data
+{
+	my($epoch,$kwh) = @_;
 
-open(my $fh,'>/dev/shm/e-bill') or die "cannot open bill:$!\n";
-print $fh "$diff_kwh\t$yen\t$delta_wh";
-close ($fh);
+	my $sth = $dbh->prepare('INSERT IGNORE INTO meter_log (period,kwh) VALUES (?,?)');
+	$sth->bind_param(1,$epoch,DBI::SQL_INTEGER);
+	$sth->bind_param(2,$kwh,DBI::SQL_DOUBLE);
+	$sth->execute;
+	$sth->finish;
+}
 
-print "OK\n";
+sub update_bill
+{
+	my $now = localtime;
+	my $prev = Time::Piece->strptime($now->strftime('%Y-%m-15'), '%Y-%m-%d') - 86400 * 30;
+
+	my $from = Time::Piece->strptime($prev->strftime('%Y-%m-26'), '%Y-%m-%d');
+	my $to = Time::Piece->strptime($now->strftime('%Y-%m-26'), '%Y-%m-%d');
+
+	my $sth = $dbh->prepare('SELECT kwh FROM meter_log WHERE period BETWEEN ? AND ? ORDER BY period LIMIT 1');
+	$sth->execute($from->epoch,$to->epoch);
+	my $r1 = $sth->fetchrow_arrayref;
+	$sth->finish;
+
+	$sth = $dbh->prepare('SELECT kwh,period FROM meter_log WHERE period BETWEEN ? AND ? ORDER BY period DESC LIMIT 2');
+	$sth->execute($from->epoch,$to->epoch);
+	my $r2 = $sth->fetchall_arrayref;
+	$sth->finish;
+
+	my $from_kwh  = ($r1->[0] + 0)*1000;
+	my $to_kwh    = ($r2->[0][0] + 0)*1000;
+	my $prev_kwh  = ($r2->[1][0] + 0)*1000;
+	my $delta_sec = ($r2->[0][1] + 0) - ($r2->[1][1] +0);
+
+	my $used_kwh = ($to_kwh - $from_kwh) / 1000;
+	my $delta_wh = ($to_kwh - $prev_kwh) * (3600 / $delta_sec);
+	my $yen = calculate($used_kwh);
+
+	open(my $fh,'>/dev/shm/e-bill') or die "cannot open bill:$!\n";
+	chmod 0666,'/dev/shm/e-bill';
+	print $fh "$used_kwh\t$yen\t$delta_wh";
+	close ($fh);
+}
 
 sub calculate
 {
