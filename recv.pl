@@ -94,7 +94,7 @@ sub update_bill
 	my $delta_sec = ($r2->[0][1] + 0) - ($r2->[1][1] +0);
 
 	my $used_kwh = ($to_kwh - $from_kwh) / 1000;
-	my $delta_wh = ($to_kwh - $prev_kwh) * (3600 / $delta_sec);
+	my $delta_wh = ($to_kwh - $prev_kwh) * (1800 / $delta_sec);
 	my $yen = calculate($used_kwh);
 
 	open(my $fh,'>/dev/shm/e-bill') or die "cannot open bill:$!\n";
