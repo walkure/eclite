@@ -1,8 +1,10 @@
 # SKSock.pm walkure at 3pf.jp
 # Socket Module For SKSTACK(Rohm BP35A1)
+# walkure at 3pf.jp
 package SKSock;
 use strict;
 use warnings;
+use POSIX qw(:termios_h);
 
 use base qw/IO::Termios/;
 
@@ -24,14 +26,25 @@ sub connect
 		print "Set speed 115200 bps\n";
 		$self->setbaud(115200);
 	}
-		
-	#initialize Protocl Stack
-#	$self->_mode('SKTERM');
-#	$self->_sendCmd('SKTERM');
+	
+	#set termios attributes	
+	my $pterm = POSIX::Termios->new;
+	$pterm->getattr($self->fileno);
 
+	my $lflags = $pterm->getlflag;
+	my $oflags = $pterm->getoflag;
+	
+	$lflags &= ~(ICANON | ECHO | ECHOE);
+	$oflags &= ~(OPOST);
 
-	$self->_mode('SKINFO');
-	$self->_sendCmd('SKINFO');
+	$pterm->setlflag($lflags);
+	$pterm->setoflag($oflags);
+	
+	$pterm->setattr($self->fileno,TCSANOW);
+
+	#start SKSTACK handshake
+	$self->_mode('SKVER');
+	$self->_sendCmd('SKVER');
 
 	$self;
 }
@@ -210,7 +223,10 @@ sub _ok
 	my ($self,$line) = @_;
 
 	my $mode = $self->_mode();
-	if($mode eq 'SKTERM'){
+	if($mode eq 'SKVER'){
+		$self->_sendCmd('SKINFO');
+		$self->_mode('SKINFO');
+	}elsif($mode eq 'SKTERM'){
 		$self->_sendCmd('SKRESET');
 		$self->_mode('SKRESET');
 	}elsif($mode eq 'SKINFO'){
