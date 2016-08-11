@@ -21,7 +21,7 @@ Zabbix3.0とECHONET Liteでスマートメータの記録を取る試み
 電力会社からBルートパスワードをゲットしておきましょう。
 ### 家側
 #### データ送信設定
-config.yamlに監視サーバのrecv.pl
+config.yamlに監視サーバのrecv.plを設定してください。
 #### zabbix_agentd.confの設定
 瞬時電力量計測値
 `UserParameter=home.watt,nc -U /tmp/watt.sock`
@@ -33,13 +33,16 @@ recv.plが何らかのWebサーバからCGIで叩けるようにします。
 
 ユーザの作成
 `GRANT INSERT,SELECT on kwh_period.* to kwh_agent@localhost IDENTIFIED by 'kwh_passwd';`
+
 テーブルの作成
-`CREATE TABLE meter_log (period int(11) NOT NULL, kwh double NOT NULL, PRIMARY KEY (`period`)) ENGINE=InnoDB;`
+`CREATE TABLE meter_log (period int(11) NOT NULL, kwh double NOT NULL, PRIMARY KEY ('period')) ENGINE=InnoDB;`
 #### zabbix_agentd.confの設定
 今月の概算電気代
 `UserParameter=home.ebill,cut -f2 /dev/shm/e-bill`
+
 今月の消費電力量
 `UserParameter=home.kwh,cut -f1 /dev/shm/e-bill`
+
 30分間の消費電力量
 `UserParameter=home.deltawh,cut -f3 /dev/shm/e-bill`
 # License
