@@ -1,4 +1,6 @@
 #!/usr/local/bin/perl
+# recv.pl walkure at 3pf.jp
+# electric bill information receiver
 
 use strict;
 use warnings;

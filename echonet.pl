@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 
 # echonet.pl walkure at 3pf.jp
-#
+# ECHONET Lite communicator
 
 use strict;
 use warnings;

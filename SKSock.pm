@@ -1,6 +1,6 @@
 # SKSock.pm walkure at 3pf.jp
 # Socket Module For SKSTACK(Rohm BP35A1)
-# walkure at 3pf.jp
+
 package SKSock;
 use strict;
 use warnings;
