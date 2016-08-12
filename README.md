@@ -20,6 +20,9 @@ Zabbix3.0とECHONET Liteでスマートメータの記録を取る試み
 ##構築
 電力会社からBルートパスワードをゲットしておきましょう。
 ### 家側
+####dependencies
+Perlのライブラリ系は基本的にはapt-getで入るはずですが、IO::Termiosだけはなかったのでcpanmで入れた。
+
 #### データ送信設定
 config.yamlに監視サーバのrecv.plを設定してください。
 #### zabbix_agentd.confの設定
