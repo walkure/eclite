@@ -23,6 +23,9 @@ Zabbix3.0とECHONET Liteでスマートメータの記録を取る試み
 ####dependencies
 Perlのライブラリ系は基本的にはapt-getで入るはずですが、IO::Termiosだけはなかったのでcpanmで入れた。
 
+あと、zabbix_agentdをapt-getしたら古いのが降ってきたので自分でZabbix3.0のtarball取ってきてbuildしました。
+PSK認証使うならbuild時にTLSライブの指定が要ります。
+
 #### データ送信設定
 config.yamlに監視サーバのrecv.plを設定してください。
 #### zabbix_agentd.confの設定
