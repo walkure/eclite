@@ -63,6 +63,7 @@ print "start process...\n";
 
 my($mag,$kwh,$period) = (0,0,0);
 my($watt,$ap) = (undef,undef);
+my $update = 0;
 
 while(1)
 {
@@ -74,7 +75,10 @@ while(1)
 				get_watt();
 				print $client "$watt\n" if defined $watt;
 				$client->close;
-			}	
+				if($update > 0 and $update + 60 * $conf->{watt}{wdt} < time){
+					$sksock->terminate;
+				}
+			}
 			next;
 		}
 		my $buf;
@@ -145,6 +149,7 @@ sub parse
 		}elsif($type == 0xe7){
 			$watt = unpack('N',$edt);
 			print $watt."W\n";
+			$update = time;
 		}elsif($type == 0xe8){
 			my($ap_r,$ap_t) = unpack('nn',$edt);
 			

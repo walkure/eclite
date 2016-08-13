@@ -71,6 +71,11 @@ sub send_udp
 	$self->syswrite($cmd);
 }
 
+sub terminate
+{
+	my $self = shift;
+	$self->_sendCmd('SKTERM');
+}
 
 sub _mode
 {

@@ -5,6 +5,7 @@ bp35a1:
 watt:
 #    tcp : "localhost:45451"
     unix: /tmp/watt.sock
+	wdt: 4
 period:
     server: http://hoge/recv.pl
     pkey: pre-share key
