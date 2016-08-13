@@ -73,7 +73,10 @@ while(1)
 			my $client = $sock->accept;
 			if(defined $client){
 				get_watt();
-				print $client "$watt\n" if defined $watt;
+				if(defined $watt){
+					print $client "$watt\n";
+					print 'send response when:'.scalar localtime($update)."\n";
+				}
 				$client->close;
 				if($update > 0 and $update + 60 * $conf->{watt}{wdt} < time){
 					$sksock->terminate;
