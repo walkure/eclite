@@ -89,6 +89,7 @@ sub _parse_line
 	my($self,$line) = @_;
 
 	my $mode = $self->_mode();
+	return if length($line) == 0;
 	print "<$mode>[$line]\n";
 
 	if(substr($line,0,6) eq 'ERXUDP'){
