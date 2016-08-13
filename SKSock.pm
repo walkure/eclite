@@ -43,7 +43,6 @@ sub connect
 	$pterm->setattr($self->fileno,TCSANOW);
 
 	#start SKSTACK handshake
-	$self->_mode('SKVER');
 	$self->_sendCmd('SKVER');
 
 	$self;
@@ -63,7 +62,7 @@ sub set_callback
 sub send_udp
 {
 	my($self,$data) = @_;
-	return unless $self->_mode() eq 'SK_CONNECTED';
+	return 0 unless $self->_mode() eq 'SK_CONNECTED';
 	
 	my $ipv6 = *$self->{sk_ipv6};
 	my $len = sprintf('%04X',length $data);
@@ -94,7 +93,6 @@ sub _parse_line
 	}elsif(substr($line,0,4) eq 'FAIL'){
 		if($mode eq 'SKTERM'){
 			$self->_sendCmd('SKRESET');
-			$self->_mode('SKRESET');
 		}else{
 			die "command returns error";
 		}
@@ -112,18 +110,17 @@ sub _parse_line
 	}elsif($mode eq 'SKLL64'){
 		if(length $line == 39){
 			*$self->{sk_ipv6} = $line;
-			$self->_sendCmd('SKJOIN '.$line);
-			$self->_mode('SKJOIN');
+			$self->_sendCmd('SKJOIN',$line);
 		}
 	}elsif($mode eq 'ROPT'){
-		$self->_mode('INIT_FIN');
 		if($line eq 'OK 00'){
-			$self->_sendCmd('WOPT 01');
+			$self->_sendCmd('WOPT','01');
 		}else{
 			print "mode OK\n";
+			$self->_mode('WOPT');
 			$self->_parse_line('OK');
 		}
-	}else{
+	}elsif(length $line > 0){
 		print "Unknown:{$line}\n";
 	}
 }
@@ -131,7 +128,10 @@ sub _parse_line
 
 sub _sendCmd
 {
-	my($self,$cmd) = @_;
+	my($self,$mode,@args)= @_;
+
+	my $cmd = join(' ',($mode,@args));
+	$self->_mode($mode);
 
 	print "send cmd[$cmd]\n";
 	print $self "$cmd\r\n";
@@ -189,13 +189,11 @@ sub _event
 	}elsif($id == 22){
 		print "Active scan finished\n";
 		unless(defined *$self->{sk_peerinfo}){
-			$self->_sendCmd('SKSCAN 2 FFFFFFFF 6');
+			$self->_sendCmd('SKSCAN','2','FFFFFFFF','6');
 		}else{
-			$self->_sendCmd('SKSREG S2 '.(*$self->{sk_peerinfo}{channel}));
-			$self->_mode('SETCHANNEL');
+			$self->_sendCmd('SKSREG S2',*$self->{sk_peerinfo}{channel});
 		}
 	}elsif($id == 24){
-		$self->_mode('SKTERM');
 		$self->_sendCmd('SKTERM');
 	}elsif($id == 25){
 		print "PANA connection established\n";
@@ -225,35 +223,25 @@ sub _ok
 	my $mode = $self->_mode();
 	if($mode eq 'SKVER'){
 		$self->_sendCmd('SKINFO');
-		$self->_mode('SKINFO');
 	}elsif($mode eq 'SKTERM'){
 		$self->_sendCmd('SKRESET');
-		$self->_mode('SKRESET');
 	}elsif($mode eq 'SKINFO'){
 		$self->_sendCmd('SKRESET');
-		$self->_mode('SKRESET');
 	}elsif($mode eq 'SKRESET'){
 		$self->_sendCmd('SKSREG SFE 0');
-		$self->_mode('ECHO_OFF');
-	}elsif($mode eq 'ECHO_OFF'){
+	}elsif($mode eq 'SKSREG SFE 0'){
 		$self->_sendCmd('ROPT');
-		$self->_mode('ROPT');
-	}elsif($mode eq 'INIT_FIN'){
-		$self->_sendCmd('SKSETPWD C '.(*$self->{sk_passwd}));
-		$self->_mode('SETPWD');
-	}elsif($mode eq 'SETPWD'){
-		$self->_sendCmd('SKSETRBID '.(*$self->{sk_userid}));
-		$self->_mode('SETRBID');
-	}elsif($mode eq 'SETRBID'){
+	}elsif($mode eq 'WOPT'){
+		$self->_sendCmd('SKSETPWD', 'C', *$self->{sk_passwd});
+	}elsif($mode eq 'SKSETPWD'){
+		$self->_sendCmd('SKSETRBID',*$self->{sk_userid});
+	}elsif($mode eq 'SKSETRBID'){
 		delete *$self->{sk_peerinfo};
-		$self->_sendCmd('SKSCAN 2 FFFFFFFF 6');
-		$self->_mode('SKSCAN');
-	}elsif($mode eq 'SETCHANNEL'){
-		$self->_sendCmd('SKSREG S3 '.(*$self->{sk_peerinfo}{pan_id}));
-		$self->_mode('SETPANID');
-	}elsif($mode eq 'SETPANID'){
-		$self->_sendCmd('SKLL64 '.(*$self->{sk_peerinfo}{addr}));
-		$self->_mode('SKLL64');
+		$self->_sendCmd('SKSCAN','2','FFFFFFFF','6');
+	}elsif($mode eq 'SKSREG S2'){
+		$self->_sendCmd('SKSREG S3',*$self->{sk_peerinfo}{pan_id});
+	}elsif($mode eq 'SKSREG S3'){
+		$self->_sendCmd('SKLL64',*$self->{sk_peerinfo}{addr});
 	}
 }
 1;
