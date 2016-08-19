@@ -51,6 +51,9 @@ recv.plが何らかのWebサーバからCGIで叩けるようにします。
 
 30分間の消費電力量
 `UserParameter=home.deltawh,cut -f3 /dev/shm/e-bill`
+
+# 簡単な説明
+http://www2.hatenadiary.jp/entry/2016/08/19/230106
 # License
 MIT
 #Author
