@@ -73,18 +73,28 @@ sub insert_data
 sub update_bill
 {
 	my $now = localtime;
-	my $prev = Time::Piece->strptime($now->strftime('%Y-%m-15'), '%Y-%m-%d') - 86400 * 30;
 
-	my $from = Time::Piece->strptime($prev->strftime('%Y-%m-26'), '%Y-%m-%d');
-	my $to = Time::Piece->strptime($now->strftime('%Y-%m-26'), '%Y-%m-%d');
+	my ($from,$to);
+
+	if($now->mday > 26){
+		$now = Time::Piece->strptime($now->strftime('%Y-%m-26 +0900'),'%Y-%m-%d %z');
+		my $next = $now->add_months(1);
+		$from = $now->epoch;
+		$to = $next->epoch;
+	}else{
+		$now = Time::Piece->strptime($now->strftime('%Y-%m-26 +0900'),'%Y-%m-%d %z');
+		my $prev = $now->add_months(-1);
+		$from = $prev->epoch;
+		$to = $now->epoch;
+	}
 
 	my $sth = $dbh->prepare('SELECT kwh FROM meter_log WHERE period BETWEEN ? AND ? ORDER BY period LIMIT 1');
-	$sth->execute($from->epoch,$to->epoch);
+	$sth->execute($from,$to);
 	my $r1 = $sth->fetchrow_arrayref;
 	$sth->finish;
 
 	$sth = $dbh->prepare('SELECT kwh,period FROM meter_log WHERE period BETWEEN ? AND ? ORDER BY period DESC LIMIT 2');
-	$sth->execute($from->epoch,$to->epoch);
+	$sth->execute($from,$to);
 	my $r2 = $sth->fetchall_arrayref;
 	$sth->finish;
 
