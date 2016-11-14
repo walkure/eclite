@@ -192,7 +192,7 @@ sub get_mag
 	my $id = shift;
 	
 	return 1      if $id == 0x00;
-	return 0,1    if $id == 0x01;
+	return 0.1    if $id == 0x01;
 	return 0.01   if $id == 0x02;
 	return 0.001  if $id == 0x03;
 	return 0.0001 if $id == 0x04;
