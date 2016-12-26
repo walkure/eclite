@@ -76,7 +76,7 @@ sub update_bill
 
 	my ($from,$to);
 
-	if($now->mday > 26){
+	if($now->mday => 26){
 		$now = Time::Piece->strptime($now->strftime('%Y-%m-26 +0900'),'%Y-%m-%d %z');
 		my $next = $now->add_months(1);
 		$from = $now->epoch;
