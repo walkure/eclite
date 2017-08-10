@@ -19,7 +19,15 @@ my $conf = LoadFile('./config.yaml');
 
 my $isock;
 
-if(defined $conf->{watt}{unix}){
+if(defined $conf->{watt}{'linux-abs'}){
+	print "use linux abstract sock[$conf->{watt}{'linux-abs'}]\n";
+	$isock = new IO::Socket::UNIX->new(
+		Type => SOCK_STREAM(),
+		Local => "\0".$conf->{watt}{'linux-abs'},
+		Listen => 1,
+	) or die "cannot establish linux abstract socket:$!\n";
+
+}elsif(defined $conf->{watt}{unix}){
 	print "use unix-sock[$conf->{watt}{unix}]\n";
 	unlink $conf->{watt}{unix} if -e $conf->{watt}{unix};
 	$isock = new IO::Socket::UNIX->new(
@@ -28,6 +36,7 @@ if(defined $conf->{watt}{unix}){
 		Listen => 1,
 	) or die "cannot establish unix-domain socket:$!\n";
 	chmod 0777 ,  $conf->{watt}{unix};
+
 
 }elsif(defined $conf->{watt}{tcp}){
 	my($host,$port) = split(/:/,$conf->{watt}{tcp});
