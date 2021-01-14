@@ -54,7 +54,8 @@ recv.plが何らかのWebサーバからCGIで叩けるようにします。
 
 # 簡単な説明
 http://www2.hatenadiary.jp/entry/2016/08/19/230106
+
 # License
 MIT
-#Author
+# Author
 walkure at 3pf.jp
