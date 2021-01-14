@@ -159,11 +159,11 @@ sub parse
 			$period = timelocal($sec,$min,$hour,$day,$month,$year);
 			update_period();
 		}elsif($type == 0xe7){
-			$watt = unpack('N',$edt);
+			$watt = unpack('N!',$edt);
 			print $watt."W\n";
 			$update = time;
 		}elsif($type == 0xe8){
-			my($ap_r,$ap_t) = unpack('nn',$edt);
+			my($ap_r,$ap_t) = unpack('n!n!',$edt);
 			
 			$ap_r = $ap_r == 0x7ffe ? 0 : $ap_r;
 			$ap_t = $ap_t == 0x7ffe ? 0 : $ap_t;
