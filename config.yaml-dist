@@ -3,9 +3,5 @@ bp35a1:
     pass    : Route-B Password
     device  : /dev/ttyWiSUN
 watt:
-#    tcp : "localhost:45451"
-    unix: /tmp/watt.sock
+    http: 8881
 	wdt: 4
-period:
-    server: http://hoge/recv.pl
-    pkey: pre-share key

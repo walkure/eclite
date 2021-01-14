@@ -10,97 +10,75 @@ use IO::Socket::INET;
 use IO::Socket::UNIX;
 require './SKSock.pm';
 use YAML::Syck;
-use Time::Local qw(timelocal);
-use Digest::MD5 qw(md5_hex);
-use HTTP::Lite;
-use URI::Escape;
+use HTTP::Daemon;
+use HTTP::Status;
+use HTTP::Response;
 
 my $conf = LoadFile('./config.yaml');
-
-my $isock;
-
-if(defined $conf->{watt}{'linux-abs'}){
-	print "use linux abstract sock[$conf->{watt}{'linux-abs'}]\n";
-	$isock = new IO::Socket::UNIX->new(
-		Type => SOCK_STREAM(),
-		Local => "\0".$conf->{watt}{'linux-abs'},
-		Listen => 1,
-	) or die "cannot establish linux abstract socket:$!\n";
-
-}elsif(defined $conf->{watt}{unix}){
-	print "use unix-sock[$conf->{watt}{unix}]\n";
-	unlink $conf->{watt}{unix} if -e $conf->{watt}{unix};
-	$isock = new IO::Socket::UNIX->new(
-		Type => SOCK_STREAM(),
-		Local => $conf->{watt}{unix},
-		Listen => 1,
-	) or die "cannot establish unix-domain socket:$!\n";
-	chmod 0777 ,  $conf->{watt}{unix};
-
-
-}elsif(defined $conf->{watt}{tcp}){
-	my($host,$port) = split(/:/,$conf->{watt}{tcp});
-	print "use tcp-sock[$host][$port]\n";
-	$isock = new IO::Socket::INET->new(
-		LocalAddr => $host,
-		LocalPort => $port,
-		Proto => 'tcp',
-		Listen => 1,
-		ReuseAddr => 1,
-	) or die "cannot establish tcp socket:$!\n";
-}else{
-	die "not found unix nor tcp\n"; 
-}
 
 my $sksock = SKSock->new(%{$conf->{bp35a1}});
 $sksock->set_callback('erxudp',\&erxudp);
 $sksock->set_callback('connected',\&on_connected);
 
+my $htsock = HTTP::Daemon->new(LocalPort=> $conf->{watt}->{http} );
+print "Listen on localhost:$conf->{watt}->{http} \n";
+
 $SIG{INT} = sub{
 	print $sksock "SKTERM\r\n";
-	$isock->close;
 	$sksock->close;
-	unlink $conf->{watt}{unix} if(defined $conf->{watt}{unix} and -e $conf->{watt}{unix});
+	$htsock->close;
 	die;
 };
 
 my $s = IO::Select->new();
 $s->add($sksock);
-$s->add($isock);
+$s->add($htsock);
 
 print "start process...\n";
 
-my($mag,$kwh,$period) = (0,0,0);
-my($watt,$ap) = (undef,undef);
+my($mag,$kwh_mag,$period) = (0,0,0);
+my($watt,$ap,$kwh) = ('NaN',undef,'NaN');
 my $update = 0;
 
 while(1)
 {
 	foreach my $sock($s->can_read(undef))
 	{
-		if ($sock == $isock){
+		if($sock == $sksock){
+			my $buf;
+			my $len = $sock->sysread($buf,65535);
+			if ($len)
+			{
+				$sock->parse_body($buf);
+			}
+		}elsif($sock == $htsock){
 			my $client = $sock->accept;
-			if(defined $client){
-				get_watt();
-				if(defined $watt){
-					print $client "$watt\n";
-					print 'send response when:'.scalar localtime($update)."\n";
-				}
-				$client->close;
-				if($update > 0 and $update + 60 * $conf->{watt}{wdt} < time){
-					$sksock->terminate;
+			if(my $req = $client->get_request){
+				if($req->method eq 'GET' and $req->uri->path eq '/metrics'){
+					get_watt();
+					$client->send_response(makeHttpResult());
+				}else{
+					$client->send_error(RC_NOT_FOUND);
 				}
 			}
-			next;
+			$client->close;
+			undef($client);
 		}
-		my $buf;
-		my $len = $sock->sysread($buf,65535);
-		if ($len)
-		{
-			$sock->parse_body($buf);
-		}
-		
 	}
+}
+
+sub makeHttpResult
+{
+	my $res = HTTP::Response->new(RC_OK);
+	$res->add_content("# HELP kwh_total The Integrated Power Comsumption\n");
+	$res->add_content("# TYPE kwh_total counter\n");
+	$res->add_content(sprintf("kwh_total{place=\"home\"} %f \n" ,$kwh));
+
+	$res->add_content("# HELP watt_now The Current Power Comsumption\n");
+	$res->add_content("# TYPE awatt_now gauge\n")	;
+	$res->add_content(sprintf("watt_now{place=\"home\"} %f \n" ,$watt));
+
+	$res;
 }
 
 sub erxudp
@@ -113,13 +91,33 @@ sub erxudp
 sub on_connected
 {
 	print "send initial query\n";
-	$sksock->send_udp("\x10\x81\x00\x01\x05\xFF\x01\x02\x88\x01\x62\x03\xE1\x00\xEA\x00\xE7\x00");
+	
+	## ECHONET Lite ヘッダ
+	# EHD1 0x10
+	# EHD2 0x81
+	# TID  0x01
+	# EDATA
+
+	## EDATA (ECHONET Lite データ)
+	# SEOJ Class-group=0x05,Class=0xFF Instance=0x01 (コントローラ)
+	# DEOJ Class-group=0x02,Class=0x88 Instance=0x01 (低圧スマート電力量メータ)
+	# ESV  0x62 プロパティ読み出し
+	# OPC  0x04 リクエスト数
+
+	# EPC1 0xD3 積算消費電力量の係数
+	# EPC2 0xE1 積算消費電力量の単位
+	# EPC3 0xE0 積算電力量計測値(正方向)
+	# EPC4 0xE7 瞬時電力計測値
+
+	# PDCn 0x00 リクエストなのでEDTのサイズは0
+
+	$sksock->send_udp("\x10\x81\x00\x01\x05\xFF\x01\x02\x88\x01\x62\x04\xD3\x00\xE1\x00\xE0\x00\xE7\x00");
 }
 
 sub get_watt
 {
 	print scalar localtime.":send query\n";
-	$sksock->send_udp("\x10\x81\x00\x01\x05\xFF\x01\x02\x88\x01\x62\x01\xE7\x00");
+	$sksock->send_udp("\x10\x81\x00\x01\x05\xFF\x01\x02\x88\x01\x62\x02\xE0\x00\xE7\x00");
 }
 
 sub parse
@@ -146,18 +144,21 @@ sub parse
 		my $type = unpack('C',$packet);
 		my $edt = substr($packet,2);
 
-		if($type == 0xe1){
+		if($type == 0xd3){
+			$kwh_mag = unpack('N',$edt);
+			print "kwh_mag:$kwh_mag\n";
+		}elsif($type == 0xe0){
+			my $raw_kwh = unpack('N!',$edt);
+			$kwh = $raw_kwh * $kwh_mag * $mag;
+			printf("%f kwh (raw:%d kwh_mag:%d mag:%f)\n" ,$kwh,$raw_kwh,$kwh_mag,$mag);
+		}elsif($type == 0xe1){
 			my $mag_id = unpack('C',$edt);
 			$mag = get_mag($mag_id);
 			print "mag:$mag\n";
 		}elsif($type == 0xea){
 			my($year,$month,$day,$hour,$min,$sec,$w) = unpack('nCCCCCN',$edt);
-			$kwh = $mag * $w;
-			print "$year-$month-$day $hour:$min:$sec $kwh($w,$mag)"."kWh\n";
-			$year -= 1900 if $year < 1900;
-			$month --;
-			$period = timelocal($sec,$min,$hour,$day,$month,$year);
-			update_period();
+			my $step_kwh = $mag * $w;
+			print "$year-$month-$day $hour:$min:$sec $step_kwh($w,$mag)"."kWh\n";
 		}elsif($type == 0xe7){
 			$watt = unpack('N!',$edt);
 			print $watt."W\n";
@@ -177,6 +178,11 @@ sub parse
 sub split_packet
 {
 	my $data = shift;
+
+	## ECHONET Lite のレスポンス
+	# EPC 1byte データの種類
+	# PDC 1byte データサイズ
+	# EDT PDCに書かれたデータサイズ 返事
 
 	$data =~s/([0-9a-fA-F]{2})/pack("H2",$1)/eg;
 	my $count = unpack('c',$data);
@@ -213,24 +219,5 @@ sub get_mag
 	printf "unknown id=0x%X\n", $id;
 	
 	1;
-}
-
-sub update_period
-{
-	return if $kwh == 0;
-	return if $period == 0;
-
-	my $data = "$period:$kwh";
-
-	my $digest = md5_hex($data.$conf->{period}{pkey});
-	$data = uri_escape($data);
-
-	my $req =  $conf->{period}{server}."?data=$data&key=$digest";
-	print "req:$req\n";
-
-	my $http = new HTTP::Lite;
-	my $code = $http->request($req);
-	my $body = $http->body();
-	print "[$body]\n";
 }
 
