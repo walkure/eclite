@@ -8,7 +8,7 @@ use warnings;
 use IO::Select;
 use IO::Socket::INET;
 use IO::Socket::UNIX;
-use SKSock;
+require './SKSock.pm';
 use YAML::Syck;
 use Time::Local qw(timelocal);
 use Digest::MD5 qw(md5_hex);
