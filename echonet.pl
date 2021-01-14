@@ -52,7 +52,7 @@ if(defined $conf->{watt}{'linux-abs'}){
 	die "not found unix nor tcp\n"; 
 }
 
-my $sksock = SKSock->connect(%{$conf->{bp35a1}});
+my $sksock = SKSock->new(%{$conf->{bp35a1}});
 $sksock->set_callback('erxudp',\&erxudp);
 $sksock->set_callback('connected',\&on_connected);
 

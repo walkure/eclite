@@ -21,7 +21,7 @@ Zabbix3.0とECHONET Liteでスマートメータの記録を取る試み
 電力会社からBルートパスワードをゲットしておきましょう。
 ### 家側
 #### dependencies
-Perlのライブラリ系は基本的にはapt-getで入るはずですが、IO::Termiosだけはなかったのでcpanmで入れた。
+Perlのライブラリ系は基本的にはapt-getで入るはず。
 
 あと、zabbix_agentdをapt-getしたら古いのが降ってきたので自分でZabbix3.0のtarball取ってきてbuildしました。
 PSK認証使うならconfigure時にTLSライブラリの指定が要ります。

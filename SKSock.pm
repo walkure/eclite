@@ -5,28 +5,20 @@ package SKSock;
 use strict;
 use warnings;
 use POSIX qw(:termios_h);
+use Fcntl qw( O_RDWR );
 
-use base qw/IO::Termios/;
+use base qw/IO::File/;
 
-sub connect 
+sub new
 {
 	my ($class,%args) = @_;
 	
-	my $dev = $args{device};
-
-	my $self = $class->SUPER::open($dev);
+	my $self = $class->SUPER::new($args{device},O_RDWR);
+	
 	*$self->{recv_buf} = '';
 	*$self->{sk_userid} = $args{id};
 	*$self->{sk_passwd} = $args{pass};
 
-	if(defined $args{speed}){
-		print "Set speed $args{speed} bps\n";
-		$self->setbaud($args{speed});
-	}else{
-		print "Set speed 115200 bps\n";
-		$self->setbaud(115200);
-	}
-	
 	#set termios attributes	
 	my $pterm = POSIX::Termios->new;
 	$pterm->getattr($self->fileno);
@@ -42,9 +34,19 @@ sub connect
 	
 	$pterm->setattr($self->fileno,TCSANOW);
 
+	if(defined $args{speed}){
+		print "Set speed $args{speed} bps\n";
+		$pterm->setispeed($args{speed});
+		$pterm->setospeed($args{speed});
+	}else{
+		print "Set speed 115200 bps\n";
+		$pterm->setispeed(115200);
+		$pterm->setospeed(115200);
+	}
+	
 	#start SKSTACK handshake
 	$self->_sendCmd('SKVER');
-
+	
 	$self;
 }
 
