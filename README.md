@@ -17,10 +17,10 @@ Zabbix3.0とECHONET Liteでスマートメータの記録を取る試み
 * ネットのどこかに監視サーバがある(さくらVPSで作りましたが)。
 * 両方のサーバにzabbix_agentdが入っていて、zabbix_serverへの疎通はできている。
 
-##構築
+## 構築
 電力会社からBルートパスワードをゲットしておきましょう。
 ### 家側
-####dependencies
+#### dependencies
 Perlのライブラリ系は基本的にはapt-getで入るはずですが、IO::Termiosだけはなかったのでcpanmで入れた。
 
 あと、zabbix_agentdをapt-getしたら古いのが降ってきたので自分でZabbix3.0のtarball取ってきてbuildしました。
