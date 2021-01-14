@@ -32,7 +32,7 @@ config.yamlに監視サーバのrecv.plを設定してください。
 瞬時電力量計測値
 `UserParameter=home.watt,nc -U /tmp/watt.sock`
 ### 監視サーバ側
-####データ受信設定
+#### データ受信設定
 recv.plが何らかのWebサーバからCGIで叩けるようにします。
 #### MySQLの設定
 家から30分に一回、積算電力量計測値が送られてくるので、それをMySQLに記録します。
