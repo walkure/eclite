@@ -62,6 +62,10 @@ while(1)
 					$client->send_error(RC_NOT_FOUND);
 				}
 			}
+			if($update > 0 and $update + 60 * $conf->{watt}{wdt} < time){
+					$sksock->terminate;
+			}
+
 			$client->close;
 			undef($client);
 		}
