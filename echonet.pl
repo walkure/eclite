@@ -20,8 +20,8 @@ my $sksock = SKSock->new(%{$conf->{bp35a1}});
 $sksock->set_callback('erxudp',\&erxudp);
 $sksock->set_callback('connected',\&on_connected);
 
-my $htsock = HTTP::Daemon->new(LocalPort=> $conf->{watt}->{http} );
-print "Listen on localhost:$conf->{watt}->{http} \n";
+my $htsock = HTTP::Daemon->new(LocalPort=> $conf->{prometheus}{http} );
+print "Listen on localhost:$conf->{prometheus}{http} \n";
 
 $SIG{INT} = sub{
 	$sksock->close;
@@ -62,7 +62,7 @@ while(1)
 					$client->send_error(RC_NOT_FOUND);
 				}
 			}
-			if($update > 0 and $update + 60 * $conf->{watt}{wdt} < time){
+			if($update > 0 and $update + 60 * $conf->{prometheus}{wdt} < time){
 					$sksock->terminate;
 			}
 
@@ -75,13 +75,23 @@ while(1)
 sub makeHttpResult
 {
 	my $res = HTTP::Response->new(RC_OK);
+
+	my $labels = '';
+	if(defined $conf->{prometheus}{labels}){
+		my @label_list;
+		foreach my $label(keys %{$conf->{prometheus}{labels}}){
+			push(@label_list,"$label=\"$conf->{prometheus}{labels}{$label}\"");
+		}
+		$labels = '{'.join(',',@label_list).'}';
+	}
+
 	$res->add_content("# HELP kwh_total The Integrated Power Comsumption\n");
 	$res->add_content("# TYPE kwh_total counter\n");
-	$res->add_content(sprintf("kwh_total{place=\"home\"} %f \n" ,$kwh));
+	$res->add_content(sprintf("kwh_total$labels %f \n" ,$kwh));
 
 	$res->add_content("# HELP watt_now The Current Power Comsumption\n");
-	$res->add_content("# TYPE awatt_now gauge\n")	;
-	$res->add_content(sprintf("watt_now{place=\"home\"} %f \n" ,$watt));
+	$res->add_content("# TYPE watt_now gauge\n")	;
+	$res->add_content(sprintf("watt_now$labels %d \n" ,$watt));
 
 	$res;
 }

@@ -2,6 +2,8 @@ bp35a1:
     id      : Route-B ID
     pass    : Route-B Password
     device  : /dev/ttyWiSUN
-watt:
+prometheus:
+    wdt: 4
     http: 8881
-	wdt: 4
+    labels:
+        place: home
