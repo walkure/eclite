@@ -24,7 +24,6 @@ my $htsock = HTTP::Daemon->new(LocalPort=> $conf->{watt}->{http} );
 print "Listen on localhost:$conf->{watt}->{http} \n";
 
 $SIG{INT} = sub{
-	print $sksock "SKTERM\r\n";
 	$sksock->close;
 	$htsock->close;
 	die;
@@ -33,6 +32,8 @@ $SIG{INT} = sub{
 my $s = IO::Select->new();
 $s->add($sksock);
 $s->add($htsock);
+
+$sksock->start;
 
 print "start process...\n";
 
