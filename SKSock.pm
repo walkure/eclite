@@ -9,6 +9,8 @@ use Fcntl qw( O_RDWR );
 
 use base qw/IO::File/;
 
+sub B115200 { 0010002 }
+
 sub new
 {
 	my ($class,%args) = @_;
@@ -34,15 +36,8 @@ sub new
 	
 	$pterm->setattr($self->fileno,TCSANOW);
 
-	if(defined $args{speed}){
-		print "Set speed $args{speed} bps\n";
-		$pterm->setispeed($args{speed});
-		$pterm->setospeed($args{speed});
-	}else{
-		print "Set speed 115200 bps\n";
-		$pterm->setispeed(115200);
-		$pterm->setospeed(115200);
-	}
+	$pterm->setispeed(B115200);
+	$pterm->setospeed(B115200);
 	
 	#start SKSTACK handshake
 	$self->_sendCmd('SKVER');
