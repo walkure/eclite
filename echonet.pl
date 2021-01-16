@@ -20,10 +20,11 @@ my $sksock = SKSock->new(%{$conf->{bp35a1}});
 $sksock->set_callback('erxudp',\&erxudp);
 $sksock->set_callback('connected',\&on_connected);
 
-my $htsock = HTTP::Daemon->new(LocalPort=> $conf->{prometheus}{http} );
+my $htsock = HTTP::Daemon->new(LocalPort=> $conf->{prometheus}{http} ) or die "cannot start prometheus server at $conf->{prometheus}{http}:$!";
 print "Listen on localhost:$conf->{prometheus}{http} \n";
 
 $SIG{INT} = sub{
+	print STDERR scalar localtime.":kill process...\n";
 	$sksock->close;
 	$htsock->close;
 	die;
@@ -35,7 +36,7 @@ $s->add($htsock);
 
 $sksock->start;
 
-print "start process...\n";
+print STDERR scalar localtime.":start process...\n";
 
 my($mag,$kwh_mag,$period) = (0,0,0);
 my($watt,$ap,$kwh) = ('NaN',undef,'NaN');
@@ -63,7 +64,10 @@ while(1)
 				}
 			}
 			if($update > 0 and $update + 60 * $conf->{prometheus}{wdt} < time){
+					printf STDERR "%s:WDT triggered. lastupdated:$update , now:%d \n",scalar localtime,scalar time;
 					$sksock->terminate;
+					#reset WDT
+					$update = time;
 			}
 
 			$client->close;
@@ -105,7 +109,7 @@ sub erxudp
 
 sub on_connected
 {
-	print "send initial query\n";
+	print STDERR scalar localtime.":send initial query\n";
 	
 	## ECHONET Lite ヘッダ
 	# EHD1 0x10
