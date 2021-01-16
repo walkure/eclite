@@ -178,6 +178,7 @@ sub parse
 			print STDERR scalar localtime.":mag:$mag\n";
 		}elsif($type == 0xea){
 			my($year,$month,$day,$hour,$min,$sec,$w) = unpack('nCCCCCN',$edt);
+			my $step_kwh = $kwh_mag * $mag * $w;
 			print "$year-$month-$day $hour:$min:$sec $step_kwh($w,$mag)"."kWh\n";
 		}elsif($type == 0xe7){
 			$watt = unpack('N!',$edt);
