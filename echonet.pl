@@ -165,7 +165,7 @@ sub parse
 
 		if($type == 0xd3){
 			$kwh_mag = unpack('N',$edt);
-			print "kwh_mag:$kwh_mag\n";
+			print STDERR scalar localtime.":kwh_mag:$kwh_mag\n";
 		}elsif($type == 0xe0){
 			my $raw_kwh = unpack('N!',$edt);
 			$kwh = $raw_kwh * $kwh_mag * $mag;
@@ -173,10 +173,9 @@ sub parse
 		}elsif($type == 0xe1){
 			my $mag_id = unpack('C',$edt);
 			$mag = get_mag($mag_id);
-			print "mag:$mag\n";
+			print STDERR scalar localtime.":mag:$mag\n";
 		}elsif($type == 0xea){
 			my($year,$month,$day,$hour,$min,$sec,$w) = unpack('nCCCCCN',$edt);
-			my $step_kwh = $mag * $w;
 			print "$year-$month-$day $hour:$min:$sec $step_kwh($w,$mag)"."kWh\n";
 		}elsif($type == 0xe7){
 			$watt = unpack('N!',$edt);
