@@ -167,6 +167,8 @@ sub parse
 			$kwh_mag = unpack('N',$edt);
 			print STDERR scalar localtime.":kwh_mag:$kwh_mag\n";
 		}elsif($type == 0xe0){
+			die "init failed: kwh_mag:$kwh_mag mag:$mag\n" if($kwh_mag == 0 || $mag == 0);
+
 			my $raw_kwh = unpack('N!',$edt);
 			$kwh = $raw_kwh * $kwh_mag * $mag;
 			printf("%f kwh (raw:%d kwh_mag:%d mag:%f)\n" ,$kwh,$raw_kwh,$kwh_mag,$mag);
