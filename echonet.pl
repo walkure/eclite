@@ -20,7 +20,9 @@ my $sksock = SKSock->new(%{$conf->{bp35a1}});
 $sksock->set_callback('erxudp',\&erxudp);
 $sksock->set_callback('connected',\&on_connected);
 
-my $htsock = HTTP::Daemon->new(LocalPort=> $conf->{prometheus}{http} ) or die "cannot start prometheus server at $conf->{prometheus}{http}:$!";
+my $htsock = HTTP::Daemon->new(LocalPort => $conf->{prometheus}{http}, ReuseAddr => 1 ) 
+	or die "cannot start prometheus server at $conf->{prometheus}{http}:$!";
+
 print "Listen on localhost:$conf->{prometheus}{http} \n";
 
 $SIG{INT} = sub{
