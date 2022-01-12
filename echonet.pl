@@ -130,16 +130,17 @@ sub on_connected
 	# SEOJ Class-group=0x05,Class=0xFF Instance=0x01 (コントローラ)
 	# DEOJ Class-group=0x02,Class=0x88 Instance=0x01 (低圧スマート電力量メータ)
 	# ESV  0x62 プロパティ読み出し
-	# OPC  0x04 リクエスト数
+	# OPC  0x05 リクエスト数
 
-	# EPC1 0xD3 積算消費電力量の係数
-	# EPC2 0xE1 積算消費電力量の単位
-	# EPC3 0xE0 積算電力量計測値(正方向)
-	# EPC4 0xE7 瞬時電力計測値
+	# EPC1 0xD3 積算消費電力量の係数(optional prop.)
+	# EPC2 0xE1 積算消費電力量の単位(mandatory prop.)
+	# EPC3 0xE0 積算電力量計測値(正方向) (mandatory)
+	# EPC4 0xE7 瞬時電力計測値 (mandatory)
+	# EPC5 0x82 APPENDIX Revision (mandatory)
 
 	# PDCn 0x00 リクエストなのでEDTのサイズは0
 
-	$sksock->send_udp("\x10\x81\x00\x01\x05\xFF\x01\x02\x88\x01\x62\x04\xD3\x00\xE1\x00\xE0\x00\xE7\x00");
+	$sksock->send_udp("\x10\x81\x00\x01\x05\xFF\x01\x02\x88\x01\x62\x05\xD3\x00\xE1\x00\xE0\x00\xE7\x00\x82\x00");
 }
 
 sub get_watt
@@ -158,13 +159,13 @@ sub parse
 	my $deoj = substr($data,14,4);
 	my $type = substr($data,20,2);
 
-	#check signature
+	#check signature(EHD1,2)
 	return if $ehd ne '1081';
-	#check src object classes
+	#check src object classes(SEOJ)
 	return if $seoj ne '0288';
-	#check dst object classes
+	#check dst object classes(DEOJ)
 	return if $deoj ne '05FF';
-	#check type
+	#check type(ESV) 72=INF 73=Get_Res
 	return unless $type eq '72' or $type eq '73';
 
 	foreach my $packet (split_packet( substr ( $data,22) ))
@@ -201,6 +202,9 @@ sub parse
 
 			$ap = ($ap_r+$ap_t) / 10;
 			print $ap."A\n";
+		}elsif($type == 0x82){
+			my ($ver,$rev) = unpack('x2AC',$edt);
+			print STDERR scalar localtime.":Supported ECHONET Lite APPENDIX Version:$ver,Revision:$rev\n";
 		}
 	}
 }
