@@ -61,8 +61,13 @@ while(1)
 			my $client = $sock->accept;
 			if(my $req = $client->get_request){
 				if($req->method eq 'GET' and $req->uri->path eq '/metrics'){
-					get_watt();
-					$client->send_response(makeHttpResult());
+					if($mag > 0 && $kwh_mag > 0){
+						get_watt();
+						$client->send_response(makeHttpResult());
+					}else{
+						print "not initialized\n";
+						$client->send_error(RC_INTERNAL_SERVER_ERROR);
+					}
 				}else{
 					$client->send_error(RC_NOT_FOUND);
 				}
