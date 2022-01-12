@@ -14,6 +14,8 @@ use HTTP::Daemon;
 use HTTP::Status;
 use HTTP::Response;
 
+$|=1;
+
 my $conf = LoadFile('./config.yaml');
 
 my $sksock = SKSock->new(%{$conf->{bp35a1}});
