@@ -165,6 +165,17 @@ sub parse
 	return if $seoj ne '0288';
 	#check dst object classes(DEOJ)
 	return if $deoj ne '05FF';
+
+	# 52=Get_SNA(cannot retrive some props.)
+	if($type eq '52' && $kwh_mag == 0)
+	{
+		# maybe 0xD3 not implemented.
+		print STDERR scalar localtime.":re-send initial query\n";
+		$sksock->send_udp("\x10\x81\x00\x01\x05\xFF\x01\x02\x88\x01\x62\x04\xE1\x00\xE0\x00\xE7\x00\x82\x00");
+		$kwh_mag = 1;
+		return;
+	}
+
 	#check type(ESV) 72=INF 73=Get_Res
 	return unless $type eq '72' or $type eq '73';
 
