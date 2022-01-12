@@ -1,7 +1,7 @@
 # eclite
 PrometheusとECHONET Liteでスマートメータの記録を取る試み
 
-※ Zabbix3.0の代わりにPrometheusを使う実装は、ブランチ`prometheus`に存在しています。
+※ PrometheusではなくZabbix 3.0を使う実装は、ブランチ`zabbix`に残しています。
 
 低圧スマート電力量メータから、以下のデータを取得します。
 
