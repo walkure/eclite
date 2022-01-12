@@ -6,18 +6,18 @@ use strict;
 use warnings;
 use POSIX qw(:termios_h);
 use Fcntl qw( O_RDWR );
-
 use base qw/IO::File/;
 
+# Linux specific baud rate value.
 sub B115200 { 0010002 }
 
 sub new
 {
 	my ($class,%args) = @_;
-	
 	my $self = $class->SUPER::new($args{device},O_RDWR);
 	
 	*$self->{recv_buf} = '';
+	*$self->{sk_mode} = 'SK_INIT';
 	*$self->{sk_userid} = $args{id};
 	*$self->{sk_passwd} = $args{pass};
 
@@ -33,16 +33,21 @@ sub new
 
 	$pterm->setlflag($lflags);
 	$pterm->setoflag($oflags);
-	
-	$pterm->setattr($self->fileno,TCSANOW);
 
+	#set speed rate
 	$pterm->setispeed(B115200);
 	$pterm->setospeed(B115200);
-	
-	#start SKSTACK handshake
-	$self->_sendCmd('SKVER');
+
+	$pterm->setattr($self->fileno,TCSANOW);
 	
 	$self;
+}
+
+sub start
+{
+	my $self = shift;
+	#start SKSTACK handshake
+	$self->_sendCmd('SKVER');
 }
 
 sub set_callback

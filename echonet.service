@@ -1,0 +1,18 @@
+[Unit]
+Description = ECHONET Lite prometheus agent
+
+Requires = dev-ttyWiSUN.device
+After = dev-ttyWiSUN.device
+BindsTo = dev-ttyWiSUN.device
+
+[Service]
+Type = simple
+StandardOutput = null
+StandardError = journal
+ExecStart = /usr/local/etc/eclite/echonet.pl
+KillMode = process
+Restart = always
+RestartSec = 10s
+
+[Install]
+WantedBy = multi-user.target dev-ttyWiSUN.device
