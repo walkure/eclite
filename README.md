@@ -21,6 +21,15 @@ PrometheusとECHONET Liteでスマートメータの記録を取る試み
 ### dependencies
 Perlのライブラリ系は基本的にはapt-getで入るはず。
 
+### Docker
+
+まずudevなどで、コンテナから `/dev/ttyUSB0` が見えるようにしておきます。
+
+
+```
+docker run --device=/dev/ttyUSB0:/dev/ttyWiSUN --mount type=bind,source=/home/walkure/eclite/conf,target=/conf -p 8881:8080 ghcr.io/walkure/eclite:latest
+```
+
 # 簡単な説明
 http://www2.hatenadiary.jp/entry/2016/08/19/230106
 
