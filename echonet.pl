@@ -16,7 +16,7 @@ use HTTP::Response;
 
 $|=1;
 
-my $conf = LoadFile('./config.yaml');
+my $conf = LoadFile($ENV{ECLITE_CONFIG} // './config.yaml');
 
 my $sksock = SKSock->new(%{$conf->{bp35a1}});
 $sksock->set_callback('erxudp',\&erxudp);
