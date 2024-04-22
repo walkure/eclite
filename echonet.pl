@@ -34,6 +34,13 @@ $SIG{INT} = sub{
 	die;
 };
 
+$SIG{TERM} = sub{
+	print STDERR scalar localtime.":terminate process...\n";
+	$sksock->close;
+	$htsock->close;
+	die;
+};
+
 my $s = IO::Select->new();
 $s->add($sksock);
 $s->add($htsock);
