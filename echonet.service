@@ -6,13 +6,18 @@ After = dev-ttyWiSUN.device
 BindsTo = dev-ttyWiSUN.device
 
 [Service]
-Type = simple
+Type = notify
+NotifyAccess=all
 StandardOutput = null
 StandardError = journal
-ExecStart = /usr/local/etc/eclite/echonet.pl
-KillMode = process
+Environment=PODMAN_SYSTEMD_UNIT=%n
+ExecStart = /usr/bin/podman run --replace --rm --name systemd-%N --cidfile=%t/%N.cid --cgroups=split --sdnotify=conmon -p 8881:8881 --device=/dev/ttyWiSUN:/dev/ttyWiSUN --mount type=bind,source=/home/walkure/eclite/conf,target=/conf -d --entrypoint=sh ghcr.io/walkure/eclite@sha256:9272df09b299ae674add162a92234a3238adc2e56777c796e91cab4cd93ce5d8 -c 'perl ./echonet.pl 1>/dev/null'
+ExecStop  = /usr/bin/podman  rm -f -i --cidfile=%t/%N.cid
+ExecStopPost=-/usr/bin/podman rm -f -i --cidfile=%t/%N.cid ; rm %t/%N.cid
+KillMode = mixed
 Restart = always
 RestartSec = 10s
+Delegate=yes
 
 [Install]
 WantedBy = multi-user.target dev-ttyWiSUN.device
