@@ -33,6 +33,18 @@ docker run --device=/dev/ttyUSB0:/dev/ttyWiSUN --mount type=bind,source=/home/wa
 systemd経由で[podman](https://podman.io/)から起動するsystemd unit file例を添付しています。
 なお、このファイルではSTDOUTログ出力を捨てています。
 
+
+#### 実装を書き換えて動かす場合のメモ
+
+- systemdのunit fileをoverrideする。
+    - `[Service]`をoverrideするにはまず`ExecStart=`を書いてクリアしてから`ExecStart= /usr/bin...` のように書かないと置換でなく追加になる([参照](https://wiki.archlinux.org/title/Systemd#Examples))。 
+- container imageをbuild
+    - podman rootlessの場合buildしたimageは`$HOME`のstorageに入るので、systemdで動かすためにはrootのstorageに入るようrootでbuildするか[コピー](https://www.redhat.com/en/blog/podman-transfer-container-images-without-registry)する必要がある。
+    - コマンド例
+        - `podman build -t localhost/echonet .`
+        - `podman image scp $USER@localhost::echonet`
+
+
 # 簡単な説明
 http://www2.hatenadiary.jp/entry/2016/08/19/230106
 
