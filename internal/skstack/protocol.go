@@ -1,6 +1,7 @@
 package skstack
 
 import (
+	"encoding/hex"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -38,14 +39,36 @@ type ERXUDPMessage struct {
 	Data             string
 }
 
+// parseERXUDP parses a hex-ASCII-framed ERXUDP line. The validation here
+// is deliberately stricter than "does this look roughly right": a
+// correctly hex-ASCII-framed line has no embedded whitespace and exactly
+// as many hex characters as its declared length claims, so any deviation
+// — extra fields, a length mismatch, non-hex characters — is a strong
+// signal the dongle is actually in binary ERXUDP mode (see doROPT) or the
+// stream is otherwise corrupted, not a benign firmware quirk to shrug
+// off. The caller treats a parse failure as "drop this one datagram,
+// keep running" (see dispatch in client.go), not fatal.
 func parseERXUDP(line string) (ERXUDPMessage, error) {
 	fields := strings.Fields(line)
-	if len(fields) < 9 {
-		return ERXUDPMessage{}, fmt.Errorf("malformed ERXUDP line: %q", line)
+	if len(fields) != 9 {
+		return ERXUDPMessage{}, fmt.Errorf("malformed ERXUDP line (want 9 fields, got %d): %q", len(fields), line)
 	}
-	length, err := strconv.Atoi(fields[7])
+	// LENGTH is hex (matching SendUDP's own outbound "%04X" length field
+	// in client.go's SKSENDTO framing), not decimal.
+	length64, err := strconv.ParseInt(fields[7], 16, 32)
 	if err != nil {
 		return ERXUDPMessage{}, fmt.Errorf("malformed ERXUDP length %q: %w", fields[7], err)
+	}
+	length := int(length64)
+	data := fields[8]
+	if len(data) != length*2 {
+		return ERXUDPMessage{}, fmt.Errorf(
+			"ERXUDP data length mismatch: declared %d bytes, got %d hex chars — check ROPT/WOPT (device may be in binary ERXUDP mode)",
+			length, len(data))
+	}
+	if _, err := hex.DecodeString(data); err != nil {
+		return ERXUDPMessage{}, fmt.Errorf(
+			"ERXUDP data is not valid hex — check ROPT/WOPT (device may be in binary ERXUDP mode): %w", err)
 	}
 	return ERXUDPMessage{
 		Src:     fields[1],
@@ -55,7 +78,7 @@ func parseERXUDP(line string) (ERXUDPMessage, error) {
 		SrcMAC:  fields[5],
 		Secure:  fields[6],
 		Length:  length,
-		Data:    fields[8],
+		Data:    data,
 	}, nil
 }
 

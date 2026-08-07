@@ -101,27 +101,20 @@ func TestConnect_ROPTAlreadyEnabled_SkipsWOPT(t *testing.T) {
 	}
 }
 
-// TestConnect_ROPTNoResponse_StillSucceeds guards the defensive fallback:
-// even though a real no-response case turned out to be a line-splitting
-// bug (fixed — see TestSplitLine), a genuinely silent ROPT must still not
-// be fatal, and — since WOPT writes NVRAM — must never trigger a
-// speculative WOPT call.
-func TestConnect_ROPTNoResponse_StillSucceeds(t *testing.T) {
+// TestConnect_ROPTNoResponse_IsFatal: a silent ROPT used to be treated as
+// non-fatal (assume hex-ASCII, proceed) — that turned out to be masking a
+// line-splitting bug (fixed, see TestSplitLine), not real firmware
+// silence. Now that BP35A1's binary-mode-by-default is understood, an
+// unconfirmed ROPT can't be trusted to mean hex-ASCII any more than a
+// confirmed-binary reply can, so this is fatal too — and must still never
+// trigger a speculative WOPT call.
+func TestConnect_ROPTNoResponse_IsFatal(t *testing.T) {
 	steps := []exchange{
 		{expect: "SKVER", reply: []string{"OK"}},
 		{expect: "SKINFO", reply: []string{"OK"}},
 		{expect: "SKRESET", reply: []string{"OK"}},
 		{expect: "SKSREG SFE 0", reply: []string{"OK"}},
 		{expect: "ROPT", reply: nil}, // no reply at all, ever
-		{expect: "SKSETPWD C " + testPass, reply: []string{"OK"}},
-		{expect: "SKSETRBID " + testID, reply: []string{"OK"}},
-		{expect: "SKSCAN 2 FFFFFFFF 6", reply: []string{
-			"EPANDESC", "  Channel:" + testChan, "  Pan ID:" + testPanID, "  Addr:" + testAddr, "EVENT 22",
-		}},
-		{expect: "SKSREG S2 " + testChan, reply: []string{"OK"}},
-		{expect: "SKSREG S3 " + testPanID, reply: []string{"OK"}},
-		{expect: "SKLL64 " + testAddr, reply: []string{testIPv6}},
-		{expect: "SKJOIN " + testIPv6, reply: []string{"OK", "EVENT 25 " + testIPv6}},
 	}
 	tr := newScriptedTransport(t, steps)
 	c := newTestClient(tr)
@@ -129,14 +122,102 @@ func TestConnect_ROPTNoResponse_StillSucceeds(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	if err := c.Connect(ctx); err != nil {
-		t.Fatalf("Connect: %v", err)
+	err := c.Connect(ctx)
+	if err == nil {
+		t.Fatalf("Connect: want error on silent ROPT, got nil")
 	}
-	// If the client had (incorrectly) called WOPT after getting no ROPT
-	// reply, scriptedTransport would have Fatal'd matching "WOPT 01"
-	// against the scripted "SKSETPWD ..." step.
+	if !strings.Contains(err.Error(), "ROPT") {
+		t.Fatalf("Connect error = %v, want it to mention ROPT", err)
+	}
+	// No steps past ROPT are scripted; if Connect had (incorrectly)
+	// proceeded to SKSETPWD (or called WOPT), scriptedTransport would
+	// have Fatal'd on the unexpected write.
 	if !tr.allStepsConsumed() {
 		t.Fatalf("not all steps consumed")
+	}
+}
+
+func TestConnect_ROPTFails_IsFatal(t *testing.T) {
+	steps := []exchange{
+		{expect: "SKVER", reply: []string{"OK"}},
+		{expect: "SKINFO", reply: []string{"OK"}},
+		{expect: "SKRESET", reply: []string{"OK"}},
+		{expect: "SKSREG SFE 0", reply: []string{"OK"}},
+		{expect: "ROPT", reply: []string{"FAIL ER10"}},
+	}
+	tr := newScriptedTransport(t, steps)
+	c := newTestClient(tr)
+	shrinkTimeouts(c)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	err := c.Connect(ctx)
+	if err == nil {
+		t.Fatalf("Connect: want error on ROPT FAIL, got nil")
+	}
+	if !strings.Contains(err.Error(), "ER10") {
+		t.Fatalf("Connect error = %v, want it to mention the FAIL line", err)
+	}
+}
+
+// TestConnect_ROPTConfirmsBinary_WOPTSucceeds_TriggersRestart: BP35A1's
+// factory default is binary ERXUDP mode, so ROPT replying "OK 00" is the
+// normal first-boot case, not an edge case. doROPT self-heals it via
+// WOPT, but since whether that NVRAM write is active for *this* session
+// is undocumented, Connect must not proceed on the same handshake — it
+// returns errWOPTProvisioned so the caller restarts and the next
+// session's own SKRESET+ROPT confirms hex-ASCII before anything is
+// parsed.
+func TestConnect_ROPTConfirmsBinary_WOPTSucceeds_TriggersRestart(t *testing.T) {
+	steps := []exchange{
+		{expect: "SKVER", reply: []string{"OK"}},
+		{expect: "SKINFO", reply: []string{"OK"}},
+		{expect: "SKRESET", reply: []string{"OK"}},
+		{expect: "SKSREG SFE 0", reply: []string{"OK"}},
+		{expect: "ROPT", reply: []string{"OK 00"}},
+		{expect: "WOPT 01", reply: []string{"OK"}},
+	}
+	tr := newScriptedTransport(t, steps)
+	c := newTestClient(tr)
+	shrinkTimeouts(c)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	err := c.Connect(ctx)
+	if !errors.Is(err, errWOPTProvisioned) {
+		t.Fatalf("Connect error = %v, want errWOPTProvisioned", err)
+	}
+	// No steps past WOPT are scripted; if Connect had (incorrectly)
+	// proceeded to SKSETPWD, scriptedTransport would have Fatal'd.
+	if !tr.allStepsConsumed() {
+		t.Fatalf("not all steps consumed")
+	}
+}
+
+func TestConnect_ROPTConfirmsBinary_WOPTFails_IsFatal(t *testing.T) {
+	steps := []exchange{
+		{expect: "SKVER", reply: []string{"OK"}},
+		{expect: "SKINFO", reply: []string{"OK"}},
+		{expect: "SKRESET", reply: []string{"OK"}},
+		{expect: "SKSREG SFE 0", reply: []string{"OK"}},
+		{expect: "ROPT", reply: []string{"OK 00"}},
+		{expect: "WOPT 01", reply: []string{"FAIL ER10"}},
+	}
+	tr := newScriptedTransport(t, steps)
+	c := newTestClient(tr)
+	shrinkTimeouts(c)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	err := c.Connect(ctx)
+	if err == nil {
+		t.Fatalf("Connect: want error on WOPT failure, got nil")
+	}
+	if errors.Is(err, errWOPTProvisioned) {
+		t.Fatalf("Connect error = %v, want a real WOPT failure, not errWOPTProvisioned", err)
+	}
+	if !strings.Contains(err.Error(), "WOPT") {
+		t.Fatalf("Connect error = %v, want it to mention WOPT", err)
 	}
 }
 
@@ -254,6 +335,50 @@ func TestRun_ERXUDPDelivery(t *testing.T) {
 		t.Fatalf("Run exited unexpectedly: %v", err)
 	case <-time.After(1 * time.Second):
 		t.Fatalf("timed out waiting for ERXUDP delivery")
+	}
+
+	cancel()
+	select {
+	case err := <-runErr:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Run() error = %v, want context.Canceled", err)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatalf("Run did not exit after context cancellation")
+	}
+}
+
+// TestRun_MalformedERXUDPIsNotFatal: a length-mismatched (or otherwise
+// invalid-hex) ERXUDP line — e.g. from a dongle unexpectedly in binary
+// ERXUDP mode — must be dropped and logged, not take down the whole
+// session; a subsequent well-formed ERXUDP must still be delivered
+// normally.
+func TestRun_MalformedERXUDPIsNotFatal(t *testing.T) {
+	c, tr := connectHappyPath(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runErr := make(chan error, 1)
+	go func() { runErr <- c.Run(ctx) }()
+
+	// Declares length 4 but only supplies 2 bytes (4 hex chars) of data.
+	badLine := "ERXUDP " + testIPv6 + " FE80:0000:0000:0000:1234:5678:9ABC:DEF0 0E1A 0E1A 001D129012345678 0 0004 DEAD"
+	tr.injectLine(badLine)
+
+	payload := []byte{0x10, 0x81, 0x00, 0x01, 0x02, 0x88, 0x01, 0x05, 0xFF, 0x01, 0x72, 0x01, 0xE7, 0x04, 0x00, 0x00, 0x01, 0xF4}
+	goodLine := "ERXUDP " + testIPv6 + " FE80:0000:0000:0000:1234:5678:9ABC:DEF0 0E1A 0E1A 001D129012345678 0 " +
+		itoaHex4(len(payload)) + " " + hexEncodeUpper(payload)
+	tr.injectLine(goodLine)
+
+	select {
+	case msg := <-c.ERXUDP():
+		if msg.Data != hexEncodeUpper(payload) {
+			t.Fatalf("ERXUDP data = %q, want %q", msg.Data, hexEncodeUpper(payload))
+		}
+	case err := <-runErr:
+		t.Fatalf("Run exited unexpectedly (malformed ERXUDP should be dropped, not fatal): %v", err)
+	case <-time.After(1 * time.Second):
+		t.Fatalf("timed out waiting for the well-formed ERXUDP after a malformed one")
 	}
 
 	cancel()

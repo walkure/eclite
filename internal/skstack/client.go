@@ -38,6 +38,16 @@ const (
 
 var errUDPResponseTimeout = errors.New("skstack: no response to outstanding UDP send within timeout")
 
+// errWOPTProvisioned is returned by doROPT when WOPT was just written for
+// the first time this session. Whether that NVRAM write takes effect
+// immediately or only after the next SKRESET is undocumented, so rather
+// than gamble on this session's ERXUDP encoding, Connect treats it as a
+// restart trigger — the caller exits, and the next session's own
+// SKRESET+ROPT confirms hex-ASCII is genuinely active before any ERXUDP
+// is ever parsed. Distinct from a WOPT failure so logs/tests can tell
+// "just provisioned, restarting to confirm" apart from a real error.
+var errWOPTProvisioned = errors.New("skstack: WOPT provisioned dongle for hex-ASCII mode; restarting to ensure it's active this session")
+
 // Client drives one BP35A1 dongle through its SKSTACK command protocol.
 type Client struct {
 	tr     Transport
@@ -230,7 +240,9 @@ func (c *Client) Connect(ctx context.Context) error {
 		}
 	}
 
-	c.doROPT(ctx)
+	if err := c.doROPT(ctx); err != nil {
+		return err
+	}
 
 	if err := c.step(ctx, c.handshakeStepTimeout, "SKSETPWD", "C", c.pass); err != nil {
 		return err
@@ -267,49 +279,63 @@ func (c *Client) Connect(ctx context.Context) error {
 	return nil
 }
 
-// doROPT replicates SKSock.pm's ROPT/WOPT quirk: a reply of exactly "OK 00"
-// means the ERXUDP-data-as-hex-ASCII option is currently off, so WOPT 01
-// must be sent to turn it on; any other reply means it's already on. WOPT
-// writes NVRAM, so it must never be called speculatively — only when ROPT
-// has explicitly confirmed it's actually needed.
+// doROPT checks whether the dongle reports ERXUDP payloads as hex-ASCII
+// text or raw binary bytes embedded in the line, and fixes it via WOPT if
+// needed. This gate matters a lot more than the ROPT/WOPT commands alone
+// suggest: SKSTACK is a line-oriented protocol, and a binary ERXUDP
+// payload can contain arbitrary bytes — including literal CR/LF — that
+// would corrupt splitLine's line framing itself, not just this one
+// datagram. BP35A1's factory default is binary mode, so a dongle
+// answering "OK 00" here is the normal first-boot case, not an edge case.
+//
+// A reply of exactly "OK 00" means binary mode is currently active, so
+// WOPT 01 must be sent to switch to hex-ASCII; any other reply means
+// hex-ASCII is already active. WOPT writes NVRAM, so it must never be
+// called speculatively — only when ROPT has explicitly confirmed it's
+// needed.
+//
+// Unlike the original (pre-fix) assumption, a ROPT timeout/failure is now
+// treated as fatal, not "proceed assuming hex-ASCII": since binary is the
+// factory default, an unconfirmed ROPT can't be trusted to mean
+// hex-ASCII any more than a confirmed-binary reply can — both get
+// refused with the same decisiveness, funneled through the same fatal
+// handshake-error path as every other step.
+//
+// Whether a same-session WOPT write is active immediately or only after
+// the next SKRESET is undocumented, so a successful WOPT does not
+// continue the handshake either — see errWOPTProvisioned.
 //
 // Per the SKSTACK command reference, ROPT/WOPT ("product setting"
 // commands) reply CR-terminated, unlike every "SK..." command's CRLF —
-// sendCmd already accounts for this on the way out. A timeout here is
-// still deliberately NOT treated as fatal, unlike every other handshake
-// step: WOPT is a one-way NVRAM write, so if a future firmware/dongle
-// variant ever answers ROPT unreliably, guessing wrong by calling WOPT
-// anyway is worse than proceeding without it.
-func (c *Client) doROPT(ctx context.Context) {
+// sendCmd already accounts for this on the way out.
+func (c *Client) doROPT(ctx context.Context) error {
 	if err := c.sendCmd("ROPT"); err != nil {
-		c.logger.Warn("skstack: failed to send ROPT, leaving WOPT untouched", "err", err)
-		return
+		return fmt.Errorf("ROPT: send: %w", err)
 	}
 	stepCtx, cancel := context.WithTimeout(ctx, c.handshakeStepTimeout)
 	defer cancel()
 	for {
 		line, err := c.nextLine(stepCtx)
 		if err != nil {
-			c.logger.Warn("skstack: no response to ROPT, leaving WOPT untouched", "err", err)
-			return
+			return fmt.Errorf("ROPT: no response within %s: %w", c.handshakeStepTimeout, err)
 		}
 		if strings.HasPrefix(line, "FAIL") {
-			c.logger.Warn("skstack: ROPT failed, leaving WOPT untouched", "line", line)
-			return
+			return fmt.Errorf("ROPT failed: %s", line)
 		}
 		if !strings.HasPrefix(line, "OK") {
 			c.logger.Debug("skstack: ignoring line while awaiting ROPT response", "line", line)
 			continue
 		}
 		if line == "OK 00" {
-			c.logger.Info("skstack: ROPT reports option off, enabling via WOPT (writes NVRAM)")
+			c.logger.Info("skstack: ROPT reports binary mode, enabling hex-ASCII via WOPT (writes NVRAM)")
 			if err := c.step(ctx, c.handshakeStepTimeout, "WOPT", "01"); err != nil {
-				c.logger.Warn("skstack: WOPT failed", "err", err)
+				return fmt.Errorf("WOPT: %w", err)
 			}
-			return
+			c.logger.Warn("skstack: WOPT provisioned dongle for hex-ASCII mode; restarting to ensure it's active this session")
+			return errWOPTProvisioned
 		}
-		c.logger.Debug("skstack: ROPT reports option already set, not calling WOPT", "line", line)
-		return
+		c.logger.Debug("skstack: ROPT reports hex-ASCII already active, not calling WOPT", "line", line)
+		return nil
 	}
 }
 

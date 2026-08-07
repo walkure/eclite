@@ -45,11 +45,15 @@ func (f *fakeTransport) Write(p []byte) (int, error) {
 	var reply []string
 	switch {
 	case cmd == "SKVER", cmd == "SKINFO", cmd == "SKRESET", cmd == "SKSREG SFE 0",
-		cmd == "WOPT 01", strings.HasPrefix(cmd, "SKSETPWD"), strings.HasPrefix(cmd, "SKSETRBID"),
+		strings.HasPrefix(cmd, "SKSETPWD"), strings.HasPrefix(cmd, "SKSETRBID"),
 		cmd == "SKSREG S2 21", cmd == "SKSREG S3 8888":
 		reply = []string{"OK"}
 	case cmd == "ROPT":
-		reply = []string{"OK 00"}
+		// Already hex-ASCII (steady state, matching real production
+		// hardware) — WOPT must NOT be called. ROPT/WOPT edge cases
+		// (binary mode, WOPT-triggers-restart, etc.) are covered at the
+		// skstack package level (client_test.go), not here.
+		reply = []string{"OK 01"}
 	case cmd == "SKSCAN 2 FFFFFFFF 6":
 		reply = []string{"EPANDESC", "  Channel:21", "  Pan ID:8888", "  Addr:001D129012345678", "EVENT 22"}
 	case cmd == "SKLL64 001D129012345678":

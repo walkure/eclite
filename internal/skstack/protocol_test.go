@@ -75,3 +75,62 @@ func TestSplitLine_ReassemblesMultipleLines(t *testing.T) {
 		t.Errorf("leftover buffer = %q, want empty", buf)
 	}
 }
+
+// TestParseERXUDP_HappyPath is a baseline sanity check for the
+// well-formed case, alongside the validation-failure tests below.
+func TestParseERXUDP_HappyPath(t *testing.T) {
+	line := "ERXUDP FE80::1 FE80::2 0E1A 0E1A 001D129012345678 0 0004 DEADBEEF"
+	msg, err := parseERXUDP(line)
+	if err != nil {
+		t.Fatalf("parseERXUDP: %v", err)
+	}
+	if msg.Src != "FE80::1" || msg.Dst != "FE80::2" {
+		t.Errorf("Src/Dst = %q/%q, want FE80::1/FE80::2", msg.Src, msg.Dst)
+	}
+	if msg.Length != 4 {
+		t.Errorf("Length = %d, want 4", msg.Length)
+	}
+	if msg.Data != "DEADBEEF" {
+		t.Errorf("Data = %q, want DEADBEEF", msg.Data)
+	}
+}
+
+// TestParseERXUDP_ValidationFailures covers the checks added specifically
+// to catch a dongle unexpectedly in binary ERXUDP mode (see doROPT):
+// under correct hex-ASCII framing, DATA has no embedded whitespace and
+// exactly 2*LENGTH hex characters — any deviation is a strong signal of
+// binary-mode corruption, not a benign quirk.
+func TestParseERXUDP_ValidationFailures(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+	}{
+		{
+			name: "length mismatch (declared 4 bytes, got 2)",
+			line: "ERXUDP FE80::1 FE80::2 0E1A 0E1A 001D129012345678 0 0004 DEAD",
+		},
+		{
+			name: "invalid hex characters",
+			line: "ERXUDP FE80::1 FE80::2 0E1A 0E1A 001D129012345678 0 0004 ZZZZZZZZ",
+		},
+		{
+			name: "extra trailing field (embedded whitespace in binary data)",
+			line: "ERXUDP FE80::1 FE80::2 0E1A 0E1A 001D129012345678 0 0004 DEAD BEEF",
+		},
+		{
+			name: "too few fields",
+			line: "ERXUDP FE80::1 FE80::2 0E1A 0E1A 001D129012345678 0 0004",
+		},
+		{
+			name: "non-numeric length",
+			line: "ERXUDP FE80::1 FE80::2 0E1A 0E1A 001D129012345678 0 XXXX DEADBEEF",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := parseERXUDP(tc.line); err == nil {
+				t.Fatalf("parseERXUDP(%q): want error, got nil", tc.line)
+			}
+		})
+	}
+}
