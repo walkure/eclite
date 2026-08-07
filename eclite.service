@@ -1,0 +1,35 @@
+[Unit]
+Description = ECHONET Lite Prometheus agent
+Requires = dev-ttyWiSUN.device
+After = dev-ttyWiSUN.device network.target
+BindsTo = dev-ttyWiSUN.device
+
+[Service]
+Type = simple
+ExecStart = /usr/local/bin/eclite
+Environment = ECLITE_CONFIG=/etc/eclite/config.yaml
+Restart = always
+RestartSec = 10s
+
+# Run as an unprivileged, systemd-managed dynamic user instead of root.
+# DynamicUser has no persistent group of its own, so both /dev/ttyWiSUN
+# and the config file (which holds the B-route id/pass) are made
+# group-readable by the existing "dialout" group instead of inventing a
+# new one — see README for the matching `install`/chgrp. Adjust the group
+# here (and the ownership in README) if your udev rules use a different
+# group, or split config access into its own group on a shared system.
+DynamicUser = yes
+SupplementaryGroups = dialout
+DevicePolicy = closed
+DeviceAllow = /dev/ttyWiSUN rw
+
+# Hardening: the daemon only needs to read its config file, talk to the
+# serial device, and listen on a TCP port — everything else can be locked
+# down.
+NoNewPrivileges = yes
+ProtectSystem = strict
+ProtectHome = yes
+PrivateTmp = yes
+
+[Install]
+WantedBy = multi-user.target dev-ttyWiSUN.device

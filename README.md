@@ -18,31 +18,37 @@ PrometheusとECHONET Liteでスマートメータの記録を取る試み
 ## 構築
 配電会社からBルートパスワードをゲットしておきましょう。
 
-### dependencies
-Perlのライブラリ系は基本的にはapt-getで入るはず。
+`eclite`はGoで書かれたシングルバイナリで、実行時の外部依存はありません(CGO無効でビルドしています)。コンテナには詰めておらず、systemdから直接バイナリを起動する構成です。
 
-### Docker
+### バイナリの入手
 
-まずudevなどで、コンテナから `/dev/ttyUSB0` が見えるようにしておきます。
+[Releases](https://github.com/walkure/eclite/releases)から対象アーキテクチャ(`linux-amd64`/`linux-arm64`/`linux-armv7`)のビルド済みバイナリを取得するのが手軽です。`vX.Y.Z`タグをpushするとGitHub Actionsが各アーキテクチャ向けにクロスコンパイルし、Releaseにバイナリと`checksums.txt`を添付します。
 
+自分でビルドする場合はGoツールチェイン(go.modに記載のバージョン以上)だけあれば足ります。
 
 ```
-docker run --device=/dev/ttyUSB0:/dev/ttyWiSUN --mount type=bind,source=/home/walkure/eclite/conf,target=/conf -p 8881:8080 ghcr.io/walkure/eclite:latest
+CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o eclite ./cmd/eclite
 ```
 
-systemd経由で[podman](https://podman.io/)から起動するsystemd unit file例を添付しています。
-なお、このファイルではSTDOUTログ出力を捨てています。
+クロスコンパイルする場合は`GOOS`/`GOARCH`/`GOARM`を指定するだけです(例: Raspberry Pi 32bit向けなら`GOOS=linux GOARCH=arm GOARM=7`)。
 
+### インストール
+
+```
+install -o root -g root -m 0755 eclite /usr/local/bin/eclite
+install -d -o root -g dialout -m 0750 /etc/eclite
+install -o root -g dialout -m 0640 config.yaml-dist /etc/eclite/config.yaml   # 中身を書き換える
+install -m 0644 eclite.service /etc/systemd/system/eclite.service
+systemctl daemon-reload
+systemctl enable --now eclite
+```
+
+`eclite.service`は`DynamicUser=yes`で非rootユーザとして動作します。`/dev/ttyWiSUN`と`/etc/eclite/config.yaml`(Bルートのid/passを含む)はどちらも`dialout`グループ経由で読めるようにしています。動的に割り当てられるユーザには固定のグループが無いため、既存の`dialout`グループへの追加読み取り許可という形にしています(udevのグループ設定が異なる場合は`SupplementaryGroups=`と上記の`chgrp`先を合わせて調整してください)。単一ユーザーのホーム用途を前提にした簡略化なので、複数ユーザーがログインする環境では専用グループを切った方が安全です。
 
 #### 実装を書き換えて動かす場合のメモ
 
-- systemdのunit fileをoverrideする。
-    - `[Service]`をoverrideするにはまず`ExecStart=`を書いてクリアしてから`ExecStart= /usr/bin...` のように書かないと置換でなく追加になる([参照](https://wiki.archlinux.org/title/Systemd#Examples))。 
-- container imageをbuild
-    - podman rootlessの場合buildしたimageは`$HOME`のstorageに入るので、systemdで動かすためにはrootのstorageに入るようrootでbuildするか[コピー](https://www.redhat.com/en/blog/podman-transfer-container-images-without-registry)する必要がある。
-    - コマンド例
-        - `podman build -t localhost/echonet .`
-        - `podman image scp $USER@localhost::echonet`
+- ビルドしたバイナリを`/usr/local/bin/eclite`に上書きコピーして`systemctl restart eclite`するだけです。コンテナ時代のように別ストレージへのコピーやイメージの参照先切り替えは不要になりました。
+- unit fileそのものを一時的に変えたい場合は`systemctl edit eclite`でoverrideするのが安全です([参照](https://wiki.archlinux.org/title/Systemd#Examples))。
 
 
 # 簡単な説明
