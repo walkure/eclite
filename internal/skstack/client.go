@@ -353,6 +353,9 @@ func (c *Client) scan(ctx context.Context) (peerInfo, error) {
 			return peerInfo{}, fmt.Errorf("SKSCAN (attempt %d/%d): %w", attempt, c.maxScanAttempts, err)
 		}
 		if found {
+			c.logger.Info("skstack: found peer via SKSCAN",
+				"channel", peer.Channel, "channel_page", peer.ChannelPage,
+				"pan_id", peer.PanID, "addr", peer.Addr, "lqi", peer.LQI, "pair_id", peer.PairID)
 			return peer, nil
 		}
 		c.logger.Info("skstack: scan found no peer, retrying", "attempt", attempt)
