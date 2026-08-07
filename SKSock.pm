@@ -11,6 +11,8 @@ use base qw/IO::File/;
 # Linux specific baud rate value.
 sub B115200 { 0010002 }
 
+sub UDP_TIMEOUT { 50 }
+
 sub new
 {
 	my ($class,%args) = @_;
@@ -20,6 +22,7 @@ sub new
 	*$self->{sk_mode} = 'SK_INIT';
 	*$self->{sk_userid} = $args{id};
 	*$self->{sk_passwd} = $args{pass};
+	*$self->{timeout_at} = 0;
 
 	#set termios attributes	
 	my $pterm = POSIX::Termios->new;
@@ -39,7 +42,7 @@ sub new
 	$pterm->setospeed(B115200);
 
 	$pterm->setattr($self->fileno,TCSANOW);
-	
+
 	$self;
 }
 
@@ -71,12 +74,28 @@ sub send_udp
 
 	my $cmd = "SKSENDTO 1 $ipv6 0E1A 1 $len $data";
 	$self->syswrite($cmd);
+
+	# start UDP timeout timer
+	*$self->{timeout_at} = time + UDP_TIMEOUT;
 }
 
 sub terminate
 {
 	my $self = shift;
 	$self->_sendCmd('SKTERM');
+}
+
+sub check_timeout
+{
+	my $self = shift;
+	my $timeout_at = *$self->{timeout_at};
+	
+	if($timeout_at > 0 && time >= $timeout_at){
+		print STDERR "SKSock Request Timeout Reached\n";
+		*$self->{timeout_at} = 0;
+		return 1;
+	}
+	return 0;
 }
 
 sub _mode
@@ -93,6 +112,7 @@ sub _parse_line
 	my $mode = $self->_mode();
 	return if length($line) == 0;
 	print "<$mode>[$line]\n";
+
 
 	if(substr($line,0,6) eq 'ERXUDP'){
 		$self->_erxudp($line);
@@ -171,6 +191,8 @@ sub _erxudp
 
 	my (undef,$src,$dst,$srcport,$dstport,$srcmac,$secure,$length,$data) = split(/\s/,$line);
 
+	*$self->{timeout_at} = 0;
+
 	if(defined *$self->{sk_erxudp} && $self->_mode() eq 'SK_CONNECTED'){
 		*$self->{sk_erxudp}->($src,$dst,$srcport,$dstport,$srcmac,$secure,$length,$data);
 	}else{
@@ -227,6 +249,8 @@ sub _event
 sub _ok
 {
 	my ($self,$line) = @_;
+
+	*$self->{timeout_at} = 0;
 
 	my $mode = $self->_mode();
 	if($mode eq 'SKVER'){

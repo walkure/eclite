@@ -41,6 +41,18 @@ $SIG{TERM} = sub{
 	die;
 };
 
+sub restart_process
+{
+	my $reason = shift;
+	print STDERR scalar(localtime).":$reason, exiting to let the container restart...\n";
+	# gracefully release the PANA session before we go, otherwise the meter
+	# may keep the stale session and refuse to reconnect after restart.
+	$sksock->terminate;
+	$sksock->close;
+	$htsock->close;
+	exit(1);
+}
+
 my $s = IO::Select->new();
 $s->add($sksock);
 $s->add($htsock);
@@ -55,7 +67,12 @@ my $update = 0;
 
 while(1)
 {
-	foreach my $sock($s->can_read(undef))
+	# タイムアウトチェック
+	if($sksock->check_timeout()){
+		restart_process('Timeout detected');
+	}
+	
+	foreach my $sock($s->can_read(5))
 	{
 		if($sock == $sksock){
 			my $buf;
@@ -81,9 +98,7 @@ while(1)
 			}
 			if($update > 0 and $update + 60 * $conf->{prometheus}{wdt} < time){
 					printf STDERR "%s:WDT triggered. lastupdated:$update , now:%d \n",scalar localtime,scalar time;
-					$sksock->terminate;
-					#reset WDT
-					$update = time;
+					restart_process('WDT triggered');
 			}
 
 			$client->close;
