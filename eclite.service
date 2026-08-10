@@ -10,6 +10,8 @@ ExecStart = /usr/local/bin/eclite
 Environment = ECLITE_CONFIG=/etc/eclite/config.yaml
 Restart = always
 RestartSec = 10s
+RestartSteps = 6
+RestartMaxDelaySec = 5min
 
 # Run as an unprivileged, systemd-managed dynamic user instead of root.
 # DynamicUser has no persistent group of its own, so both /dev/ttyWiSUN
