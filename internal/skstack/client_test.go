@@ -3,6 +3,7 @@ package skstack
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -42,6 +43,87 @@ func happyPathSteps() []exchange {
 		{expect: "SKSREG S3 " + testPanID, reply: []string{"OK"}},
 		{expect: "SKLL64 " + testAddr, reply: []string{testIPv6}},
 		{expect: "SKJOIN " + testIPv6, reply: []string{"OK", "EVENT 25 " + testIPv6}},
+	}
+}
+
+// happyPathStepsBP35C0 mirrors happyPathSteps but for a BP35C0-generation
+// dongle: SKVER replies with "EVER 1.5.2" (crossing the 1.5 threshold in
+// hasSideParam), so SKSCAN must carry the resulting <SIDE>=0 argument —
+// proving the same client auto-adapts to both module generations purely
+// from SKVER, without a config flag.
+func happyPathStepsBP35C0() []exchange {
+	return []exchange{
+		{expect: "SKVER", reply: []string{"EVER 1.5.2", "OK"}},
+		{expect: "SKINFO", reply: []string{"OK"}},
+		{expect: "SKRESET", reply: []string{"OK"}},
+		{expect: "SKSREG SFE 0", reply: []string{"OK"}},
+		{expect: "ROPT", reply: []string{"OK 01"}},
+		{expect: "SKSETPWD C " + testPass, reply: []string{"OK"}},
+		{expect: "SKSETRBID " + testID, reply: []string{"OK"}},
+		{expect: "SKSCAN 2 FFFFFFFF 6 0", reply: []string{
+			"EPANDESC",
+			"  Channel:" + testChan,
+			"  Channel Page:09",
+			"  Pan ID:" + testPanID,
+			"  Addr:" + testAddr,
+			"  LQI:C1",
+			"  Side:0",
+			"  PairID:00112233",
+			"EVENT 22",
+		}},
+		{expect: "SKSREG S2 " + testChan, reply: []string{"OK"}},
+		{expect: "SKSREG S3 " + testPanID, reply: []string{"OK"}},
+		{expect: "SKLL64 " + testAddr, reply: []string{testIPv6}},
+		{expect: "SKJOIN " + testIPv6, reply: []string{"OK", "EVENT 25 " + testIPv6}},
+	}
+}
+
+// TestConnect_HappyPath_BP35C0 is the BP35C0-generation counterpart to
+// TestConnect_HappyPath. scriptedTransport's exact-command assertion on
+// every step means this fails loudly if Connect omits <SIDE> anywhere it
+// belongs once a 1.5.x SKVER reply is seen.
+func TestConnect_HappyPath_BP35C0(t *testing.T) {
+	tr := newScriptedTransport(t, happyPathStepsBP35C0())
+	c := newTestClient(tr)
+	shrinkTimeouts(c)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := c.Connect(ctx); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	if !tr.allStepsConsumed() {
+		t.Fatalf("Connect returned success without consuming the full BP35C0 scripted transcript")
+	}
+	if !c.sideParam {
+		t.Fatalf("sideParam = false after EVER 1.5.2, want true")
+	}
+}
+
+// TestSendUDP_SideParam confirms SKSENDTO carries the <SIDE>=0 argument
+// once Connect has detected a BP35C0-generation dongle. scriptedTransport
+// asserts the exact bytes written, so this fails if SendUDP's BP35C0
+// branch regresses to the no-SIDE header.
+func TestSendUDP_SideParam(t *testing.T) {
+	payload := []byte{0x10, 0x81}
+	wantWrite := fmt.Sprintf("SKSENDTO 1 %s 0E1A 1 0 %04X ", testIPv6, len(payload)) + string(payload)
+	steps := append(happyPathStepsBP35C0(), exchange{expect: wantWrite})
+	tr := newScriptedTransport(t, steps)
+	c := newTestClient(tr)
+	shrinkTimeouts(c)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	if err := c.Connect(ctx); err != nil {
+		cancel()
+		t.Fatalf("Connect: %v", err)
+	}
+	cancel()
+
+	if err := c.SendUDP(payload); err != nil {
+		t.Fatalf("SendUDP: %v", err)
+	}
+	if !tr.allStepsConsumed() {
+		t.Fatalf("SendUDP did not write the expected <SIDE>-bearing SKSENDTO header")
 	}
 }
 

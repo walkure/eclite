@@ -48,19 +48,30 @@ type ERXUDPMessage struct {
 // stream is otherwise corrupted, not a benign firmware quirk to shrug
 // off. The caller treats a parse failure as "drop this one datagram,
 // keep running" (see dispatch in client.go), not fatal.
-func parseERXUDP(line string) (ERXUDPMessage, error) {
+//
+// sideParam must match hasSideParam(the dongle's SKVER string): BP35C0's
+// SKSTACK (unlike BP35A1's) inserts a <SIDE> field between SECURED and
+// DATALEN, per the BP35C0 command reference's ERXUDP event — so the field
+// count and the index of everything from SECURED onward shifts by one.
+func parseERXUDP(line string, sideParam bool) (ERXUDPMessage, error) {
 	fields := strings.Fields(line)
-	if len(fields) != 9 {
-		return ERXUDPMessage{}, fmt.Errorf("malformed ERXUDP line (want 9 fields, got %d): %q", len(fields), line)
+	wantFields := 9
+	secureIdx, lengthIdx, dataIdx := 6, 7, 8
+	if sideParam {
+		wantFields = 10
+		secureIdx, lengthIdx, dataIdx = 6, 8, 9
+	}
+	if len(fields) != wantFields {
+		return ERXUDPMessage{}, fmt.Errorf("malformed ERXUDP line (want %d fields, got %d): %q", wantFields, len(fields), line)
 	}
 	// LENGTH is hex (matching SendUDP's own outbound "%04X" length field
 	// in client.go's SKSENDTO framing), not decimal.
-	length64, err := strconv.ParseInt(fields[7], 16, 32)
+	length64, err := strconv.ParseInt(fields[lengthIdx], 16, 32)
 	if err != nil {
-		return ERXUDPMessage{}, fmt.Errorf("malformed ERXUDP length %q: %w", fields[7], err)
+		return ERXUDPMessage{}, fmt.Errorf("malformed ERXUDP length %q: %w", fields[lengthIdx], err)
 	}
 	length := int(length64)
-	data := fields[8]
+	data := fields[dataIdx]
 	if len(data) != length*2 {
 		return ERXUDPMessage{}, fmt.Errorf(
 			"ERXUDP data length mismatch: declared %d bytes, got %d hex chars — check ROPT/WOPT (device may be in binary ERXUDP mode)",
@@ -76,10 +87,54 @@ func parseERXUDP(line string) (ERXUDPMessage, error) {
 		SrcPort: fields[3],
 		DstPort: fields[4],
 		SrcMAC:  fields[5],
-		Secure:  fields[6],
+		Secure:  fields[secureIdx],
 		Length:  length,
 		Data:    data,
 	}, nil
+}
+
+// hasSideParam reports whether the dongle's SKSTACK firmware requires the
+// <SIDE> parameter on SKSCAN/SKSENDTO and includes it in ERXUDP lines.
+//
+// Empirically (comparing ROHM's two command references against a live
+// EVER reply from each module): BP35A1 (EVER 1.2.10, command reference
+// v1.3.2) uses the older 3-argument SKSCAN / no-SIDE ERXUDP form; BP35C0
+// (EVER 1.5.2, command reference v1.2.0, Dual Stack Edition) requires
+// SIDE everywhere, to disambiguate its B-route/HAN MAC planes. The split
+// tracks the SKSTACK firmware generation, not the module model printed on
+// the case, so this checks the (major, minor) from SKVER rather than any
+// product string — there's no SKSTACK command that reports the module
+// model directly.
+//
+// An unparsable version reply falls back to false (the older, narrower
+// protocol): a 3-argument SKSCAN against a dongle that actually demands 4
+// fails loudly (FAIL ER05) and is easy to diagnose from the log, whereas
+// guessing "new protocol" against an old dongle would misparse every
+// ERXUDP as malformed and silently drop all incoming data.
+func hasSideParam(version string) bool {
+	major, minor, ok := parseVersionMajorMinor(version)
+	if !ok {
+		return false
+	}
+	if major != 1 {
+		return major > 1
+	}
+	return minor >= 5
+}
+
+// parseVersionMajorMinor extracts the leading "major.minor" from an EVER
+// reply's x.x.x version string (e.g. "1.5.2" -> 1, 5, true).
+func parseVersionMajorMinor(version string) (major, minor int, ok bool) {
+	parts := strings.SplitN(strings.TrimSpace(version), ".", 3)
+	if len(parts) < 2 {
+		return 0, 0, false
+	}
+	major, errMajor := strconv.Atoi(parts[0])
+	minor, errMinor := strconv.Atoi(parts[1])
+	if errMajor != nil || errMinor != nil {
+		return 0, 0, false
+	}
+	return major, minor, true
 }
 
 // parseEventLine parses a line of the form "EVENT <id> [addr]". ok is false

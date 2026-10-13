@@ -64,6 +64,11 @@ type Client struct {
 	connected bool
 	ipv6      string
 
+	// sideParam is set once, during Connect's doSKVER step, from the
+	// dongle's reported SKSTACK version (see hasSideParam). It must not
+	// be read before Connect's SKVER step completes.
+	sideParam bool
+
 	timeoutMu  sync.Mutex
 	timeoutAt  time.Time
 	udpTimeout time.Duration
@@ -225,11 +230,14 @@ func (c *Client) step(ctx context.Context, timeout time.Duration, mode string, a
 // Connect runs the full SKVER..SKJOIN handshake and blocks until the PANA
 // session with the meter is established, or ctx/step timeouts expire.
 func (c *Client) Connect(ctx context.Context) error {
+	if err := c.doSKVER(ctx); err != nil {
+		return err
+	}
+
 	steps := []struct {
 		mode string
 		args []string
 	}{
-		{"SKVER", nil},
 		{"SKINFO", nil},
 		{"SKRESET", nil},
 		{"SKSREG", []string{"SFE", "0"}},
@@ -277,6 +285,39 @@ func (c *Client) Connect(ctx context.Context) error {
 	c.ipv6 = ipv6
 	c.mu.Unlock()
 	return nil
+}
+
+// doSKVER sends SKVER and parses its "EVER x.x.x" reply to decide whether
+// this dongle's SKSTACK firmware needs the <SIDE> parameter on
+// SKSCAN/SKSENDTO and in ERXUDP (see hasSideParam) — letting the same
+// client binary drive both a BP35A1 and a BP35C0 without a config flag.
+// Must run before any SKSCAN/SKSENDTO/ERXUDP handling; Connect calls it
+// first, before the rest of the handshake.
+func (c *Client) doSKVER(ctx context.Context) error {
+	if err := c.sendCmd("SKVER"); err != nil {
+		return fmt.Errorf("send SKVER: %w", err)
+	}
+	stepCtx, cancel := context.WithTimeout(ctx, c.handshakeStepTimeout)
+	defer cancel()
+	var version string
+	for {
+		line, err := c.nextLine(stepCtx)
+		if err != nil {
+			return fmt.Errorf("SKVER: no response within %s: %w", c.handshakeStepTimeout, err)
+		}
+		switch {
+		case strings.HasPrefix(line, "FAIL"):
+			return fmt.Errorf("SKVER failed: %s", line)
+		case strings.HasPrefix(line, "EVER "):
+			version = strings.TrimPrefix(line, "EVER ")
+		case line == "OK":
+			c.sideParam = hasSideParam(version)
+			c.logger.Info("skstack: SKSTACK version detected", "version", version, "side_param", c.sideParam)
+			return nil
+		default:
+			c.logger.Debug("skstack: ignoring line while awaiting SKVER response", "line", line)
+		}
+	}
 }
 
 // doROPT checks whether the dongle reports ERXUDP payloads as hex-ASCII
@@ -342,8 +383,12 @@ func (c *Client) doROPT(ctx context.Context) error {
 // scan runs SKSCAN, retrying (bounded, unlike Perl's unbounded retry) until
 // a peer is found or attempts are exhausted.
 func (c *Client) scan(ctx context.Context) (peerInfo, error) {
+	scanArgs := []string{"2", "FFFFFFFF", "6"}
+	if c.sideParam {
+		scanArgs = append(scanArgs, "0") // SIDE=0 (B-route plane)
+	}
 	for attempt := 1; attempt <= c.maxScanAttempts; attempt++ {
-		if err := c.sendCmd("SKSCAN", "2", "FFFFFFFF", "6"); err != nil {
+		if err := c.sendCmd("SKSCAN", scanArgs...); err != nil {
 			return peerInfo{}, fmt.Errorf("send SKSCAN: %w", err)
 		}
 		scanCtx, cancel := context.WithTimeout(ctx, c.scanStepTimeout)
@@ -486,7 +531,7 @@ func (c *Client) Run(ctx context.Context) error {
 func (c *Client) dispatch(line string) error {
 	switch {
 	case strings.HasPrefix(line, "ERXUDP"):
-		msg, err := parseERXUDP(line)
+		msg, err := parseERXUDP(line, c.sideParam)
 		if err != nil {
 			c.logger.Warn("skstack: malformed ERXUDP line, ignoring", "err", err, "line", line)
 			return nil
@@ -534,7 +579,12 @@ func (c *Client) SendUDP(payload []byte) error {
 	// SKSENDTO's DATA is raw binary immediately following the ASCII header
 	// (the device reads exactly the declared length) — unlike every other
 	// SKSTACK command, it is NOT hex-encoded and has NO trailing CRLF.
-	header := fmt.Sprintf("SKSENDTO 1 %s 0E1A 1 %04X ", ipv6, len(payload))
+	var header string
+	if c.sideParam {
+		header = fmt.Sprintf("SKSENDTO 1 %s 0E1A 1 0 %04X ", ipv6, len(payload)) // SIDE=0 (B-route plane)
+	} else {
+		header = fmt.Sprintf("SKSENDTO 1 %s 0E1A 1 %04X ", ipv6, len(payload))
+	}
 	buf := append([]byte(header), payload...)
 	if _, err := c.tr.Write(buf); err != nil {
 		return fmt.Errorf("SKSENDTO: %w", err)

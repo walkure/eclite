@@ -80,7 +80,7 @@ func TestSplitLine_ReassemblesMultipleLines(t *testing.T) {
 // well-formed case, alongside the validation-failure tests below.
 func TestParseERXUDP_HappyPath(t *testing.T) {
 	line := "ERXUDP FE80::1 FE80::2 0E1A 0E1A 001D129012345678 0 0004 DEADBEEF"
-	msg, err := parseERXUDP(line)
+	msg, err := parseERXUDP(line, false)
 	if err != nil {
 		t.Fatalf("parseERXUDP: %v", err)
 	}
@@ -92,6 +92,75 @@ func TestParseERXUDP_HappyPath(t *testing.T) {
 	}
 	if msg.Data != "DEADBEEF" {
 		t.Errorf("Data = %q, want DEADBEEF", msg.Data)
+	}
+}
+
+// TestParseERXUDP_HappyPath_SideParam mirrors TestParseERXUDP_HappyPath
+// for a BP35C0-generation dongle (sideParam=true): per the command
+// reference (and confirmed against Skyley Networks' own BP35C2 writeup),
+// SKSTACK 1.5+ inserts a <SIDE> field between SECURED and DATALEN,
+// shifting every field from there on by one.
+func TestParseERXUDP_HappyPath_SideParam(t *testing.T) {
+	line := "ERXUDP FE80::1 FE80::2 0E1A 0E1A 001D129012345678 0 0 0004 DEADBEEF"
+	msg, err := parseERXUDP(line, true)
+	if err != nil {
+		t.Fatalf("parseERXUDP: %v", err)
+	}
+	if msg.Src != "FE80::1" || msg.Dst != "FE80::2" {
+		t.Errorf("Src/Dst = %q/%q, want FE80::1/FE80::2", msg.Src, msg.Dst)
+	}
+	if msg.Secure != "0" {
+		t.Errorf("Secure = %q, want 0", msg.Secure)
+	}
+	if msg.Length != 4 {
+		t.Errorf("Length = %d, want 4", msg.Length)
+	}
+	if msg.Data != "DEADBEEF" {
+		t.Errorf("Data = %q, want DEADBEEF", msg.Data)
+	}
+}
+
+// TestParseERXUDP_SideParamMismatch confirms that feeding a sideParam=true
+// (BP35C0-shaped) line through sideParam=false parsing — or vice versa —
+// is rejected as malformed rather than silently misparsed into the wrong
+// fields, since the two forms differ only in field count/position, not in
+// any self-describing marker.
+func TestParseERXUDP_SideParamMismatch(t *testing.T) {
+	noSideLine := "ERXUDP FE80::1 FE80::2 0E1A 0E1A 001D129012345678 0 0004 DEADBEEF"
+	if _, err := parseERXUDP(noSideLine, true); err == nil {
+		t.Errorf("parseERXUDP(no-SIDE line, sideParam=true): want error, got nil")
+	}
+	sideLine := "ERXUDP FE80::1 FE80::2 0E1A 0E1A 001D129012345678 0 0 0004 DEADBEEF"
+	if _, err := parseERXUDP(sideLine, false); err == nil {
+		t.Errorf("parseERXUDP(SIDE line, sideParam=false): want error, got nil")
+	}
+}
+
+// TestHasSideParam checks the (major, minor) threshold against the actual
+// EVER replies observed from each module (see hasSideParam's doc comment)
+// plus edge cases (malformed, missing, newer major version).
+func TestHasSideParam(t *testing.T) {
+	tests := []struct {
+		version string
+		want    bool
+	}{
+		{"1.2.10", false}, // BP35A1
+		{"1.3.2", false},
+		{"1.4.9", false},
+		{"1.5.2", true}, // BP35C0
+		{"1.5.0", true},
+		{"1.6.0", true},
+		{"2.0.0", true},
+		{"", false},
+		{"garbage", false},
+		{"1", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.version, func(t *testing.T) {
+			if got := hasSideParam(tc.version); got != tc.want {
+				t.Errorf("hasSideParam(%q) = %v, want %v", tc.version, got, tc.want)
+			}
+		})
 	}
 }
 
@@ -128,7 +197,7 @@ func TestParseERXUDP_ValidationFailures(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := parseERXUDP(tc.line); err == nil {
+			if _, err := parseERXUDP(tc.line, false); err == nil {
 				t.Fatalf("parseERXUDP(%q): want error, got nil", tc.line)
 			}
 		})
